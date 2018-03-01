@@ -61,7 +61,8 @@ void TsLayer::parseNextLayer()
 
 uint64_t TsLayer::getingressTs() {
 	uint64_t timestamp = 0;
-	for (int i=6; i>0; i--) {
+	for (int i=0; i<6; i--) {
+		printf("ingressTS :%X\n", getTsHeader()->ingressTs[i]);
 		timestamp = (timestamp | getTsHeader()->ingressTs[i]) << 8;
 	}
 	return timestamp;
@@ -69,7 +70,8 @@ uint64_t TsLayer::getingressTs() {
 
 uint64_t TsLayer::getingressMacTs() {
 	uint64_t timestamp = 0;
-	for (int i=6; i>0; i--) {
+	for (int i=0; i<6; i--) {
+		printf("ingressMacTS :%X\n", getTsHeader()->ingressTs[i]);
 		timestamp = (timestamp | getTsHeader()->ingressMacTs[i]) << 8;
 	}
 	return timestamp;
@@ -77,17 +79,23 @@ uint64_t TsLayer::getingressMacTs() {
 
 uint64_t TsLayer::getegressTs() {
 	uint64_t timestamp = 0;
-	for (int i=6; i>0; i--) {
+	for (int i=0; i<6; i--) {
+		printf("egressTS :%X\n", getTsHeader()->ingressTs[i]);
 		timestamp = (timestamp | getTsHeader()->egressTs[i]) << 8;
 	}
 	return timestamp;
 }
 
+void TsLayer::dumpHeader() {
+	for (size_t i =0;i< m_DataLen;i++) {
+		printf("%X ", m_Data[i]);
+	}
+	printf("Total =%lu", m_DataLen);
+}
 
-std::string TsLayer::toString()
-{
+std::string TsLayer::toString() {
 	char TS[500];
-	sprintf( TS,"TimeSync=>ID:%d, ingressTs: %ul, ingressMacTs: %ul, egressTs: $ul, enqDepth: %u, deqDelta: %u"+ getId(), getingressTs(), getingressMacTs(), getegressTs(), getenqTs(), getdeqDelta());
+	sprintf( TS,"TimeSync=>ID:%X, ingressTs: %X, ingressMacTs: X, egressTs: %X, enqDepth: %X, deqDelta: %X"+ getId(), getingressTs(), getingressMacTs(), getegressTs(), getenqTs(), getdeqDelta());
 	return std::string(TS);
 }
 
