@@ -66,7 +66,7 @@ uint32_t TsLayer::getId() {
 		id = (id | m_Data[i]) << 8;
 	}
 	id = id >> 8;
-	printf("ID:%X\n", id);
+	printf("ID:%X,", id);
 	return id;
 }
 
@@ -108,10 +108,11 @@ uint64_t TsLayer::getegressTs() {
 
 uint32_t TsLayer::getenqTs() {
 	uint32_t enqTs = 0;
-	for (int i=22; i<26; i++) {
+	int i = 22;
+	for (i=22; i<25; i++) {
 		enqTs = (enqTs | m_Data[i]) << 8;
 	}
-	enqTs = enqTs >>8;
+	enqTs = enqTs | m_Data[i];
 
 	printf("eqnTs :%X,", enqTs);
 
@@ -120,10 +121,11 @@ uint32_t TsLayer::getenqTs() {
 
 uint32_t TsLayer::getdeqDelta() {
 	uint32_t deqDelta = 0;
-	for (int i=26; i<30; i++) {
+	int i =26;
+	for (i=26; i<29; i++) {
 		deqDelta = (deqDelta | m_Data[i]) << 8;
 	}
-	deqDelta = deqDelta >>8;
+	deqDelta = deqDelta | m_Data[i];
 
 	printf("deqDelta :%X\n", deqDelta);
 	return deqDelta;
