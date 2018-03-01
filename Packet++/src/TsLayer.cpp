@@ -129,4 +129,8 @@ std::string TsLayer::toString() {
 	return std::string(TS);
 }
 
+void TsLayer::dumpString() {
+	char TS[500];
+	printf("TimeSync=>ID:%X, ingressTs: %X, ingressMacTs: %X, egressTs: %X, enqDepth: %X, deqDelta: %X"+ getId(), getingressTs(), getingressMacTs(), getegressTs(), getenqTs(), getdeqDelta());
+}
 } // namespace pcpp

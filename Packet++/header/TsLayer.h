@@ -88,6 +88,8 @@ namespace pcpp
 		inline size_t getHeaderLen() { return sizeof(ts_header); }
 
 		void dumpHeader();
+		void dumpString();
+
 		std::string toString();
 
 		OsiModelLayer getOsiModelLayer() { return OsiModelDataLinkLayer; }
