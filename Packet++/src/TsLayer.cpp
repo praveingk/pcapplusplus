@@ -62,10 +62,10 @@ void TsLayer::parseNextLayer()
 uint32_t TsLayer::getId() {
 	uint32_t id = 0;
 	for (size_t i = 0; i< 4;i++) {
-		printf("ID : %X\n", m_Data[i]);
+		//printf("ID : %X\n", m_Data[i]);
 		id = (id | m_Data[i]) << 8;
 	}
-	printf("ID-Fin : %X\n", id);
+	printf("ID:%X\n", id);
 	return id;
 }
 
@@ -74,45 +74,50 @@ uint32_t TsLayer::getId() {
 uint64_t TsLayer::getingressTs() {
 	uint64_t timestamp = 0;
 	for (int i=4; i<10; i++) {
-		printf("ingressTS :%X\n", m_Data[i]);
+		//printf("ingressTS :%X\n", m_Data[i]);
 		timestamp = (timestamp | m_Data[i]) << 8;
 	}
+	printf("ingressTS:%lX,", timestamp);
 	return timestamp;
 }
 
 uint64_t TsLayer::getingressMacTs() {
 	uint64_t timestamp = 0;
 	for (int i=10; i<16; i++) {
-		printf("ingressMacTS :%X\n", m_Data[i]);
+		//printf("ingressMacTS :%X\n", m_Data[i]);
 		timestamp = (timestamp | m_Data[i]) << 8;
 	}
+	printf("ingressMacTS:%lX,", timestamp);
 	return timestamp;
 }
 
 uint64_t TsLayer::getegressTs() {
 	uint64_t timestamp = 0;
 	for (int i=16; i<22; i++) {
-		printf("egressTS :%X\n", m_Data[i]);
+		//printf("egressTS :%X\n", m_Data[i]);
 		timestamp = (timestamp | m_Data[i]) << 8;
 	}
+	printf("getingressTs:%lX,", timestamp);
+
 	return timestamp;
 }
 
 uint32_t TsLayer::getenqTs() {
 	uint32_t enqTs = 0;
 	for (int i=22; i<26; i++) {
-		printf("eqnTs :%X\n", m_Data[i]);
 		enqTs = (enqTs | m_Data[i]) << 8;
 	}
+	printf("eqnTs :%X,", enqTs);
+
 	return enqTs;
 }
 
 uint32_t TsLayer::getdeqDelta() {
 	uint32_t deqDelta = 0;
 	for (int i=26; i<30; i++) {
-		printf("deqDelta :%X\n", m_Data[i]);
 		deqDelta = (deqDelta | m_Data[i]) << 8;
 	}
+	printf("deqDelta :%X\n", deqDelta);
 	return deqDelta;
 }
 
@@ -130,7 +135,11 @@ std::string TsLayer::toString() {
 }
 
 void TsLayer::dumpString() {
-	char TS[500];
-	printf("TimeSync=>ID:%X, ingressTs: %X, ingressMacTs: %X, egressTs: %X, enqDepth: %X, deqDelta: %X"+ getId(), getingressTs(), getingressMacTs(), getegressTs(), getenqTs(), getdeqDelta());
+	getId();
+	getingressTs();
+	getingressMacTs();
+	getegressTs();
+	getenqTs();
+	getdeqDelta();
 }
 } // namespace pcpp
