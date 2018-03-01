@@ -65,6 +65,7 @@ uint32_t TsLayer::getId() {
 		printf("ID : %X\n", m_Data[i]);
 		id = (id | m_Data[i]) << 8;
 	}
+	printf("ID-Fin : %X\n", id);
 	return id;
 }
 
@@ -119,7 +120,7 @@ void TsLayer::dumpHeader() {
 	for (size_t i =0;i< m_DataLen;i++) {
 		printf("%X ", m_Data[i]);
 	}
-	printf("Total =%lu", m_DataLen);
+	printf("Total =%lu\n", m_DataLen);
 }
 
 std::string TsLayer::toString() {
