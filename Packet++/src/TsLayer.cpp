@@ -61,7 +61,7 @@ void TsLayer::parseNextLayer()
 
 uint64_t TsLayer::getingressTs() {
 	uint64_t timestamp = 0;
-	for (int i=0; i<6; i--) {
+	for (int i=0; i<6; i++) {
 		printf("ingressTS :%X\n", getTsHeader()->ingressTs[i]);
 		timestamp = (timestamp | getTsHeader()->ingressTs[i]) << 8;
 	}
@@ -70,7 +70,7 @@ uint64_t TsLayer::getingressTs() {
 
 uint64_t TsLayer::getingressMacTs() {
 	uint64_t timestamp = 0;
-	for (int i=0; i<6; i--) {
+	for (int i=0; i<6; i++) {
 		printf("ingressMacTS :%X\n", getTsHeader()->ingressTs[i]);
 		timestamp = (timestamp | getTsHeader()->ingressMacTs[i]) << 8;
 	}
@@ -79,7 +79,7 @@ uint64_t TsLayer::getingressMacTs() {
 
 uint64_t TsLayer::getegressTs() {
 	uint64_t timestamp = 0;
-	for (int i=0; i<6; i--) {
+	for (int i=0; i<6; i++) {
 		printf("egressTS :%X\n", getTsHeader()->ingressTs[i]);
 		timestamp = (timestamp | getTsHeader()->egressTs[i]) << 8;
 	}
