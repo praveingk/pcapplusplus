@@ -114,20 +114,21 @@ void do_receive(PcapLiveDevice* dev) {
 
 bool do_timesync(PcapLiveDevice* pDevice, const string source_mac, const string dest_mac) {
 	// create a packet with initial capacity of 100 bytes (will grow automatically if needed)
-	pcpp::Packet newPacket(100);
 	// create a new Ethernet layer
   uint8_t ingressTs[6];
 	uint8_t ingressMacTs[6];
 	uint8_t egressTs[6];
 	uint32_t enqDepth = 0;
 	uint32_t deqDelta = 0;
-	pcpp::EthLayer newEthernetLayer(pcpp::MacAddress(source_mac), pcpp::MacAddress(dest_mac), 0x1234);
-	pcpp::TsLayer newTsLayer(0, ingressTs, ingressMacTs, egressTs, enqDepth, deqDelta);
-
-	// add all the layers we created
-	newPacket.addLayer(&newEthernetLayer);
-	newPacket.addLayer(&newTsLayer);
-	pDevice->sendPacket(&newPacket);
+	for (int i=0;i<5;i++) {
+		pcpp::Packet newPacket(100);
+		pcpp::EthLayer newEthernetLayer(pcpp::MacAddress(source_mac), pcpp::MacAddress(dest_mac), 0x1234);
+		pcpp::TsLayer newTsLayer(i, ingressTs, ingressMacTs, egressTs, enqDepth, deqDelta);
+		// add all the layers we created
+		newPacket.addLayer(&newEthernetLayer);
+		newPacket.addLayer(&newTsLayer);
+		pDevice->sendPacket(&newPacket);
+	}
 
 	return true;
 }
