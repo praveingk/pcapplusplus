@@ -60,7 +60,7 @@ namespace pcpp
 		 */
 		inline ts_header* getTsHeader() { return (ts_header*)m_Data; }
 
-		inline uint32_t getId() { return getTsHeader()->id; }
+		uint32_t getId();
 
 		uint64_t getingressTs();
 
@@ -68,9 +68,9 @@ namespace pcpp
 
 		uint64_t getegressTs();
 
-		inline uint32_t getenqTs() { return getTsHeader()->id; }
+	  uint32_t getenqTs();
 
-		inline uint32_t getdeqDelta() { return getTsHeader()->id; }
+	  uint32_t getdeqDelta();
 
 
 		// implement abstract methods
