@@ -61,12 +61,13 @@ void TsLayer::parseNextLayer()
 
 uint32_t TsLayer::getId() {
 	uint32_t id = 0;
-	for (size_t i = 0; i< 4;i++) {
+	int i = 0;
+	for (int i = 0; i< 3;i++) {
 		//printf("ID : %X\n", m_Data[i]);
 		id = (id | m_Data[i]) << 8;
 	}
-	id = id >> 8;
-	printf("ID:%X,", id);
+	id = id | m_Data[i];
+	printf("ID:%u,", id);
 	return id;
 }
 
@@ -79,7 +80,7 @@ uint64_t TsLayer::getingressTs() {
 		timestamp = (timestamp | m_Data[i]) << 8;
 	}
 	timestamp = timestamp >>8;
-	printf("ingressTS:%lX,", timestamp);
+	printf("ingressTS:%lu,", timestamp);
 	return timestamp;
 }
 
@@ -90,7 +91,7 @@ uint64_t TsLayer::getingressMacTs() {
 		timestamp = (timestamp | m_Data[i]) << 8;
 	}
 	timestamp = timestamp >>8;
-	printf("ingressMacTS:%lX,", timestamp);
+	printf("ingressMacTS:%lu,", timestamp);
 	return timestamp;
 }
 
@@ -101,7 +102,7 @@ uint64_t TsLayer::getegressTs() {
 		timestamp = (timestamp | m_Data[i]) << 8;
 	}
 	timestamp = timestamp >>8;
-	printf("getingressTs:%lX,", timestamp);
+	printf("getingressTs:%lu,", timestamp);
 
 	return timestamp;
 }
@@ -114,7 +115,7 @@ uint32_t TsLayer::getenqTs() {
 	}
 	enqTs = enqTs | m_Data[i];
 
-	printf("eqnTs :%X,", enqTs);
+	printf("eqnTs :%u,", enqTs);
 
 	return enqTs;
 }
@@ -127,7 +128,7 @@ uint32_t TsLayer::getdeqDelta() {
 	}
 	deqDelta = deqDelta | m_Data[i];
 
-	printf("deqDelta :%X\n", deqDelta);
+	printf("deqDelta :%u\n", deqDelta);
 	return deqDelta;
 }
 
