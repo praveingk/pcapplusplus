@@ -98,8 +98,8 @@ void do_receive(PcapLiveDevice* dev) {
 		pcpp::Packet parsedPacket(*iter);
 		if (parsedPacket.isPacketOfType(pcpp::TS)) {
 			TsLayer* tsLayer = parsedPacket.getLayerOfType<TsLayer>();
-			tsLayer->dumpHeader();
-			printf("%s", tsLayer->toString().c_str());
+			tsLayer->dumpString();
+			//printf("%s", tsLayer->toString().c_str());
 		}
 
 	}
