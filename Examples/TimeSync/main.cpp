@@ -14,8 +14,10 @@
 #include <PcapLiveDevice.h>
 #include <EthLayer.h>
 #include <TsLayer.h>
+#include <TimeSyncLayer.h>
 #include <ArpLayer.h>
 #include <Logger.h>
+#include <time.h>
 #if !defined(WIN32) && !defined(WINx64) //for using ntohl, ntohs, etc.
 #include <in.h>
 #endif
@@ -24,11 +26,16 @@
 using namespace std;
 using namespace pcpp;
 
+#define COMMAND_TIMERESET 0x1
+#define COMMAND_TIMESYNC_REQ 0x2
+
 static struct option L3FwdOptions[] =
 {
 	{"interface",  required_argument, 0, 'i'},
 	{"victim", required_argument, 0, 'c'},
 	{"gateway", required_argument, 0, 'g'},
+	{"reset_time",  no_argument, 0, 'p'},
+	{"timesync",  no_argument, 0, 't'},
 	{"receive", no_argument, 0, 'r'},
 	{"help", no_argument, 0, 'h'},
 	{"version", no_argument, 0, 'v'},
@@ -42,6 +49,8 @@ void printUsage() {
 		 "%s [-hv] -i interface_ip -c victim_ip -g gateway_ip\n"
 		 "\nOptions:\n\n"
 		 "    -i interface_ip   : The IPv4 address of interface to use\n"
+		 "    -p timesync   : Send the current time out\n"
+		 "    -t timesync   : Get the current time\n"
 		 "    -c victim_ip      : The IPv4 address of the victim\n"
 		 "    -g gateway_ip     : The IPv4 address of the gateway\n"
 		 "    -h                : Displays this help message and exits\n"
@@ -65,17 +74,17 @@ void printAppVersion()
 /**
  * A callback function for the async capture which is called each time a packet is captured
  */
-static void receivePackets(pcpp::RawPacket* packet, pcpp::PcapLiveDevice* dev, void* cookie)
-{
-	// parsed the raw packet
-	printf("Got TS Packet");
-
-	pcpp::Packet parsedPacket(packet);
-	TsLayer* tsLayer = parsedPacket.getLayerOfType<TsLayer>();
-
-	printf("%s", tsLayer->toString().c_str());
-
-}
+// static void receivePackets(pcpp::RawPacket* packet, pcpp::PcapLiveDevice* dev, void* cookie)
+// {
+// 	// parsed the raw packet
+// 	printf("Got TS Packet");
+//
+// 	pcpp::Packet parsedPacket(packet);
+// 	TsLayer* tsLayer = parsedPacket.getLayerOfType<TsLayer>();
+//
+// 	printf("%s", tsLayer->toString().c_str());
+//
+// }
 
 void do_receive(PcapLiveDevice* dev) {
 	ProtoFilter protocolFilter(TS);
@@ -101,7 +110,6 @@ void do_receive(PcapLiveDevice* dev) {
 			tsLayer->dumpString();
 			//printf("%s", tsLayer->toString().c_str());
 		}
-
 	}
 
 	// int res = dev->startCapture(receivePackets, NULL);
@@ -112,7 +120,65 @@ void do_receive(PcapLiveDevice* dev) {
 
 }
 
-bool do_timesync(PcapLiveDevice* pDevice, const string source_mac, const string dest_mac) {
+void do_receive_timesync(PcapLiveDevice* dev) {
+	ProtoFilter protocolFilter(TIMESYNC);
+	if (!dev->setFilter(protocolFilter)) {
+		printf("Cannot set TIMESYNC filter on device. Exiting...\n");
+		exit(-1);
+	}
+	printf("Waiting for Timsync packets...\n");
+
+	pcpp::RawPacketVector packetVec;
+
+	dev->startCapture(packetVec);
+	PCAP_SLEEP(2);
+	dev->stopCapture();
+
+
+	for (pcpp::RawPacketVector::ConstVectorIterator iter = packetVec.begin(); iter != packetVec.end(); iter++)
+	{
+		// parse raw packet
+		pcpp::Packet parsedPacket(*iter);
+		if (parsedPacket.isPacketOfType(pcpp::TIMESYNC)) {
+			TimeSyncLayer* tsLayer = parsedPacket.getLayerOfType<TimeSyncLayer>();
+			tsLayer->dumpString();
+			//printf("%s", tsLayer->toString().c_str());
+		}
+	}
+
+	// int res = dev->startCapture(receivePackets, NULL);
+	// if (!res) {
+	// 	printf("Cannot start capturing packets\n");
+	// 	exit(-1);
+	// }
+
+}
+
+
+void do_reset_time(PcapLiveDevice* pDevice) {
+	struct timespec tsp;
+	pcpp::Packet newPacket(100);
+	pcpp::EthLayer newEthernetLayer(pDevice->getMacAddress(), pcpp::MacAddress("ff:ff:ff:ff:ff:ff"), 0x1235);
+	clock_gettime(CLOCK_REALTIME, &tsp);   //Call clock_gettime to fill tsp
+	pcpp::TimeSyncLayer newTimeSyncLayer((uint8_t)COMMAND_TIMERESET, (uint8_t)0,(uint32_t)tsp.tv_sec, (uint32_t)tsp.tv_nsec, (uint32_t)0);
+	newPacket.addLayer(&newEthernetLayer);
+	newPacket.addLayer(&newTimeSyncLayer);
+	pDevice->sendPacket(&newPacket);
+	printf("Sent a timestamp of ref_hi=%lu, ref_lo=%lu\n", tsp.tv_sec, tsp.tv_nsec);
+}
+
+void do_timesync(PcapLiveDevice* pDevice) {
+	pcpp::Packet newPacket(100);
+	pcpp::EthLayer newEthernetLayer(pDevice->getMacAddress(), pcpp::MacAddress("ff:ff:ff:ff:ff:ff"), 0x1235);
+	pcpp::TimeSyncLayer newTimeSyncLayer((uint8_t)COMMAND_TIMESYNC_REQ, (uint8_t)0,(uint32_t)0, (uint32_t)0, (uint32_t)0);
+	newPacket.addLayer(&newEthernetLayer);
+	newPacket.addLayer(&newTimeSyncLayer);
+	pDevice->sendPacket(&newPacket);
+	do_receive_timesync(pDevice);
+
+}
+
+bool do_ts(PcapLiveDevice* pDevice, const string source_mac, const string dest_mac) {
 	// create a packet with initial capacity of 100 bytes (will grow automatically if needed)
 	// create a new Ethernet layer
   uint8_t ingressTs[6];
@@ -140,9 +206,11 @@ int main(int argc, char* argv[])
 
 	string iface = "", source_mac = "", dest_mac = "";
 	int receive = 0;
+	int reset_time = 0;
+	int timesync = 0;
 	int optionIndex = 0;
 	char opt = 0;
-	while((opt = getopt_long (argc, argv, "i:c:g:rhv", L3FwdOptions, &optionIndex)) != -1)
+	while((opt = getopt_long (argc, argv, "i:c:g:ptrhv", L3FwdOptions, &optionIndex)) != -1)
 	{
 		switch (opt)
 		{
@@ -157,9 +225,15 @@ int main(int argc, char* argv[])
 			case 'g':
 				dest_mac = optarg;
 				break;
+			case 'p':
+				reset_time  = 1;
+				break;
+			case 't':
+				timesync  = 1;
+				break;
 			case 'r':
-					receive  = 1;
-					break;
+				receive  = 1;
+				break;
 			case 'h':
 				printUsage();
 				break;
@@ -199,9 +273,20 @@ int main(int argc, char* argv[])
 		printf("Cannot open interface. Exiting...\n");
 		exit(-1);
 	}
+
+	if (reset_time == 1) {
+		do_reset_time(pIfaceDevice);
+		exit(0);
+	}
+
+	if (timesync == 1) {
+		do_timesync(pIfaceDevice);
+		exit(0);
+	}
+
 	if (receive == 1) {
 		do_receive(pIfaceDevice);
 	} else {
-		return(!do_timesync(pIfaceDevice, source_mac, dest_mac));
+		return(!do_ts(pIfaceDevice, source_mac, dest_mac));
 	}
 }

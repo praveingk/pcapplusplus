@@ -9,6 +9,8 @@
 #include "PPPoELayer.h"
 #include "MplsLayer.h"
 #include "TsLayer.h"
+#include "TimeSyncLayer.h"
+
 #include <string.h>
 #if defined(WIN32) || defined(WINx64)
 #include <winsock2.h>
@@ -65,6 +67,9 @@ void EthLayer::parseNextLayer()
 	case PCPP_ETHERTYPE_TS:
 		m_NextLayer = new TsLayer(m_Data + sizeof(ether_header), m_DataLen - sizeof(ether_header), this, m_Packet);
 		break;
+	case PCPP_ETHERTYPE_TIMESYNC:
+		m_NextLayer = new TimeSyncLayer(m_Data + sizeof(ether_header), m_DataLen - sizeof(ether_header), this, m_Packet);
+		break;
 	default:
 		m_NextLayer = new PayloadLayer(m_Data + sizeof(ether_header), m_DataLen - sizeof(ether_header), this, m_Packet);
 	}
@@ -92,6 +97,9 @@ void EthLayer::computeCalculateFields()
 			break;
 		case TS:
 			getEthHeader()->etherType = htons(PCPP_ETHERTYPE_TS);
+			break;
+		case TIMESYNC:
+			getEthHeader()->etherType = htons(PCPP_ETHERTYPE_TIMESYNC);
 			break;
 		default:
 			return;

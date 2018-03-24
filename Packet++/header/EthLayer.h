@@ -61,6 +61,7 @@ namespace pcpp
 	/** Point-to-point protocol (PPP) */
 #define PCPP_ETHERTYPE_PPP		0x880B
 #define PCPP_ETHERTYPE_TS		0x1234
+#define PCPP_ETHERTYPE_TIMESYNC		0x1235
 
 	/**
 	 * @class EthLayer

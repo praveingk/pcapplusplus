@@ -195,9 +195,13 @@ namespace pcpp
 		 */
 		SDP = 0x10000000,
 		/*
-    		 * TimeSync Protocol
-                 */
-		TS = 0x20000000
+     * TimeGet Protocol
+     */
+		TS = 0x20000000,
+		/*
+		 * TimeSync Protocol
+		 */
+		TIMESYNC = 0x20000001
 	};
 
 
