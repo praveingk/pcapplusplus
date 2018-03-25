@@ -73,7 +73,7 @@ void EthLayer::parseNextLayer()
 		m_NextLayer = new TimeSyncLayer(m_Data + sizeof(ether_header), m_DataLen - sizeof(ether_header), this, m_Packet);
 		break;
 	case PCPP_ETHERTYPE_TIMESYNCCPU:
-		m_NextLayer = new TimeSyncLayer(m_Data + sizeof(ether_header), m_DataLen - sizeof(ether_header), this, m_Packet);
+		m_NextLayer = new TimeSyncCPULayer(m_Data + sizeof(ether_header), m_DataLen - sizeof(ether_header), this, m_Packet);
 		break;
 	default:
 		m_NextLayer = new PayloadLayer(m_Data + sizeof(ether_header), m_DataLen - sizeof(ether_header), this, m_Packet);
