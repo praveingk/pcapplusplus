@@ -10,6 +10,8 @@
 #include "MplsLayer.h"
 #include "TsLayer.h"
 #include "TimeSyncLayer.h"
+#include "TimeSyncCPULayer.h"
+
 
 #include <string.h>
 #if defined(WIN32) || defined(WINx64)
@@ -100,6 +102,9 @@ void EthLayer::computeCalculateFields()
 			break;
 		case TIMESYNC:
 			getEthHeader()->etherType = htons(PCPP_ETHERTYPE_TIMESYNC);
+			break;
+		case TIMESYNCCPU:
+			getEthHeader()->etherType = htons(PCPP_ETHERTYPE_TIMESYNCCPU);
 			break;
 		default:
 			return;

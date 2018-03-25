@@ -34,7 +34,7 @@ TimeSyncLayer::TimeSyncLayer(const uint8_t command, const uint8_t magic, const u
 	tsHdr->reference_ts_hi = reference_ts_hi;
 	tsHdr->delta = delta;
 
-	m_Protocol = TS;
+	m_Protocol = TIMESYNC;
 }
 
 

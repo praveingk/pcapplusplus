@@ -62,6 +62,7 @@ namespace pcpp
 #define PCPP_ETHERTYPE_PPP		0x880B
 #define PCPP_ETHERTYPE_TS		0x1234
 #define PCPP_ETHERTYPE_TIMESYNC		0x1235
+#define PCPP_ETHERTYPE_TIMESYNCCPU	0x7777
 
 	/**
 	 * @class EthLayer

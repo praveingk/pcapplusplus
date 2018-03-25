@@ -160,7 +160,7 @@ void do_reset_time(PcapLiveDevice* pDevice) {
 	pcpp::Packet newPacket(100);
 	pcpp::EthLayer newEthernetLayer(pDevice->getMacAddress(), pcpp::MacAddress("ff:ff:ff:ff:ff:ff"), 0x1235);
 	clock_gettime(CLOCK_REALTIME, &tsp);   //Call clock_gettime to fill tsp
-	pcpp::TimeSyncLayer newTimeSyncLayer((uint8_t)COMMAND_TIMERESET, (uint8_t)0,(uint32_t)tsp.tv_sec, (uint32_t)tsp.tv_nsec, (uint32_t)0);
+	pcpp::TimeSyncLayer newTimeSyncLayer((uint8_t)COMMAND_TIMERESET, (uint8_t)0,(uint32_t)tsp.tv_nsec, (uint32_t)tsp.tv_sec, (uint32_t)0);
 	newPacket.addLayer(&newEthernetLayer);
 	newPacket.addLayer(&newTimeSyncLayer);
 	pDevice->sendPacket(&newPacket);
