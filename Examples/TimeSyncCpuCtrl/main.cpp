@@ -75,10 +75,11 @@ uint64_t do_receive_cpuctrl(PcapLiveDevice* dev) {
 	dev->startCapture(packetVec);
 	PCAP_SLEEP(1);
 	dev->stopCapture();
-	printf("Captured Packets..");
+	printf("Captured Packets..\n");
 	for (pcpp::RawPacketVector::ConstVectorIterator iter = packetVec.begin(); iter != packetVec.end(); iter++)
 	{
 		// parse raw packet
+		printf("TSCPU Packet received\n");
 		pcpp::Packet parsedPacket(*iter);
 		if (parsedPacket.isPacketOfType(pcpp::TIMESYNCCPU)) {
 			TimeSyncCPULayer* tsLayer = parsedPacket.getLayerOfType<TimeSyncCPULayer>();
