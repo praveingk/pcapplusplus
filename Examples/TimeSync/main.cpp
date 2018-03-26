@@ -28,6 +28,7 @@ using namespace pcpp;
 
 #define COMMAND_TIMERESET 0x1
 #define COMMAND_TIMESYNC_REQ 0x2
+#define COMMNAD_TIMESYNC_RESPONSE 0x3
 
 static struct option L3FwdOptions[] =
 {
@@ -141,16 +142,12 @@ void do_receive_timesync(PcapLiveDevice* dev) {
 		pcpp::Packet parsedPacket(*iter);
 		if (parsedPacket.isPacketOfType(pcpp::TIMESYNC)) {
 			TimeSyncLayer* tsLayer = parsedPacket.getLayerOfType<TimeSyncLayer>();
-			tsLayer->dumpString();
+			if (tsLayer->getCommand() == COMMAND_TIMESYNC_RESPONSE) {
+				tsLayer->dumpString();
+			}
 			//printf("%s", tsLayer->toString().c_str());
 		}
 	}
-
-	// int res = dev->startCapture(receivePackets, NULL);
-	// if (!res) {
-	// 	printf("Cannot start capturing packets\n");
-	// 	exit(-1);
-	// }
 
 }
 
