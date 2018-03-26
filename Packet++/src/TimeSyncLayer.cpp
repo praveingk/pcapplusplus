@@ -21,7 +21,7 @@
 namespace pcpp
 {
 
-TimeSyncLayer::TimeSyncLayer(const uint8_t command, const uint8_t magic, const uint32_t reference_ts_lo, const uint32_t reference_ts_hi, const uint32_t delta) : Layer()
+TimeSyncLayer::TimeSyncLayer(const uint8_t command, const uint8_t magic, const uint32_t reference_ts_lo, const uint32_t reference_ts_hi, const uint32_t delta, const uint8_t* globalTs, const uint32_t eraTs) : Layer()
 {
 	m_DataLen = sizeof(timesync_t);
 	m_Data = new uint8_t[m_DataLen];
@@ -33,6 +33,8 @@ TimeSyncLayer::TimeSyncLayer(const uint8_t command, const uint8_t magic, const u
 	tsHdr->reference_ts_lo = reference_ts_lo;
 	tsHdr->reference_ts_hi = reference_ts_hi;
 	tsHdr->delta = delta;
+	tsHdr->eraTs = eraTs;
+	memcpy(tsHdr->globalTs, globalTs, 6);
 
 	m_Protocol = TIMESYNC;
 }
@@ -87,6 +89,24 @@ uint32_t TimeSyncLayer::getDelta() {
 	printf("delta:%u\n", delta);
 	return delta;
 }
+
+uint64_t TimeSyncLayer::getGlobalTs() {
+	uint64_t timestamp = 0;
+	for (int i=14; i<=19; i++) {
+		//printf("ingressTS :%X\n", m_Data[i]);
+		timestamp = (timestamp | m_Data[i]) << 8;
+	}
+	timestamp = timestamp >>8;
+	printf("globalTS:%lu,", timestamp);
+	return timestamp;
+}
+
+uint32_t TimeSyncLayer::getEraTs() {
+	uint32_t eraTs = getTimeSyncHeader()->eraTs;
+	printf("eraTs:%u\n", eraTs);
+	return eraTs;
+}
+
 void TimeSyncLayer::dumpHeader() {
 	for (size_t i =0;i< m_DataLen;i++) {
 		printf("%X ", m_Data[i]);
@@ -107,5 +127,7 @@ void TimeSyncLayer::dumpString() {
 	getReference_ts_hi();
 	getReference_ts_lo();
 	getDelta();
+	getGlobalTs();
+	getEraTs();
 }
 } // namespace pcpp
