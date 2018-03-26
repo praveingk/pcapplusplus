@@ -75,11 +75,9 @@ uint64_t do_receive_cpuctrl(PcapLiveDevice* dev) {
 	dev->startCapture(packetVec);
 	PCAP_SLEEP(1);
 	dev->stopCapture();
-	printf("Captured Packets..\n");
 	for (pcpp::RawPacketVector::ConstVectorIterator iter = packetVec.begin(); iter != packetVec.end(); iter++)
 	{
 		// parse raw packet
-		printf("TSCPU Packet received\n");
 		pcpp::Packet parsedPacket(*iter);
 		if (parsedPacket.isPacketOfType(pcpp::TIMESYNCCPU)) {
 			TimeSyncCPULayer* tsLayer = parsedPacket.getLayerOfType<TimeSyncCPULayer>();
@@ -123,10 +121,10 @@ void do_probe(PcapLiveDevice* pDevice) {
 	uint64_t sampleTs2 = 0;
 	while(true) {
 		sampleTs1 = send_probe(pDevice);
-		printf("SampleTS1 = %lu", sampleTs1);
+		printf("SampleTS1 = %lu\n", sampleTs1);
 		PCAP_SLEEP(2);
 		sampleTs2 = send_probe(pDevice);
-		printf("SampleTS2 = %lu", sampleTs1);
+		printf("SampleTS2 = %lu\n", sampleTs1);
 		if (sampleTs2 < sampleTs1) {
 			printf(" Wrap detected. Incrementing ERA");
 			do_sendEra(pDevice);
