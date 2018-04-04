@@ -28,7 +28,7 @@ using namespace pcpp;
 
 #define COMMAND_TIMERESET 0x1
 #define COMMAND_TIMESYNC_REQ 0x2
-#define COMMNAD_TIMESYNC_RESPONSE 0x3
+#define COMMAND_TIMESYNC_RESPONSE 0x3
 
 static struct option L3FwdOptions[] =
 {
@@ -148,7 +148,39 @@ void do_receive_timesync(PcapLiveDevice* dev) {
 			//printf("%s", tsLayer->toString().c_str());
 		}
 	}
+}
 
+static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveDevice* dev, void* cookie)
+{
+	printf("Packet Arrvies\n");
+	// parsed the raw packet
+	pcpp::Packet parsedPacket(packet);
+	printf("here\n");
+	if (parsedPacket.isPacketOfType(pcpp::TIMESYNC)) {
+		printf("here\n");
+		TimeSyncLayer* tsLayer = parsedPacket.getLayerOfType<TimeSyncLayer>();
+		//if (tsLayer->getCommand() == COMMAND_TIMESYNC_RESPONSE) {
+			tsLayer->dumpString();
+		//}
+		//printf("%s", tsLayer->toString().c_str());
+	}
+	printf("Done\n");
+	return false;
+}
+
+
+void do_receive_timesync_blocking(PcapLiveDevice* dev) {
+	ProtoFilter protocolFilter(TIMESYNC);
+	int cookie;
+	if (!dev->setFilter(protocolFilter)) {
+		printf("Cannot set TIMESYNC filter on device. Exiting...\n");
+		exit(-1);
+	}
+	printf("Waiting for Timsync packets...\n");
+
+	pcpp::RawPacketVector packetVec;
+
+	dev->startCaptureBlockingMode(onPacketArrivesBlockingMode, &cookie, 10);
 }
 
 
@@ -173,7 +205,7 @@ void do_timesync(PcapLiveDevice* pDevice) {
 	newPacket.addLayer(&newEthernetLayer);
 	newPacket.addLayer(&newTimeSyncLayer);
 	pDevice->sendPacket(&newPacket);
-	do_receive_timesync(pDevice);
+	do_receive_timesync_blocking(pDevice);
 
 }
 
