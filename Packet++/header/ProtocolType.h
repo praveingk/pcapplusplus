@@ -201,8 +201,8 @@ namespace pcpp
 		/*
 		 * TimeSync Protocol
 		 */
-		TIMESYNC = 0x20000001,
-		TIMESYNCCPU = 0x20000002
+		TIMESYNC = 0x40000000,
+		TIMESYNCCPU = 0x80000000
 
 	};
 

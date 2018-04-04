@@ -29,12 +29,11 @@ namespace pcpp
 		RawPacket* m_RawPacket;
 		Layer* m_FirstLayer;
 		Layer* m_LastLayer;
-		uint64_t m_ProtocolTypes;
 		size_t m_MaxPacketLen;
 		bool m_FreeRawPacket;
 
 	public:
-
+		uint64_t m_ProtocolTypes;
 		/**
 		 * A constructor for creating a new packet. Very useful when creating packets.
 		 * When using this constructor an empty raw buffer is allocated (with the size of maxPacketLen) and a new RawPacket is created

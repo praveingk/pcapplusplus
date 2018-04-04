@@ -67,7 +67,7 @@ uint8_t TimeSyncLayer::getCommand() {
 
 uint8_t TimeSyncLayer::getMagic() {
 	uint8_t magic = getTimeSyncHeader()->magic;
-	printf("magic:%02x", magic);
+	printf("magic:%02x,", magic);
 	return magic;
 }
 
@@ -86,7 +86,7 @@ uint32_t TimeSyncLayer::getReference_ts_hi() {
 
 uint32_t TimeSyncLayer::getDelta() {
 	uint32_t delta = getTimeSyncHeader()->delta;
-	printf("delta:%u\n", delta);
+	printf("delta:%u", delta);
 	return delta;
 }
 

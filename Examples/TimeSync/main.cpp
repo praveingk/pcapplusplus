@@ -152,19 +152,22 @@ void do_receive_timesync(PcapLiveDevice* dev) {
 
 static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveDevice* dev, void* cookie)
 {
-	printf("Packet Arrvies\n");
+	//printf("Packet Arrvies\n");
 	// parsed the raw packet
 	pcpp::Packet parsedPacket(packet);
-	printf("here\n");
+	//printf("here\n");
+	//printf("Packet : %s\n", parsedPacket.toString(true).c_str());
 	if (parsedPacket.isPacketOfType(pcpp::TIMESYNC)) {
-		printf("here\n");
+		//printf("here\n");
 		TimeSyncLayer* tsLayer = parsedPacket.getLayerOfType<TimeSyncLayer>();
+		printf("Protocol = %lX\n", parsedPacket.m_ProtocolTypes);
+
 		//if (tsLayer->getCommand() == COMMAND_TIMESYNC_RESPONSE) {
 			tsLayer->dumpString();
 		//}
 		//printf("%s", tsLayer->toString().c_str());
 	}
-	printf("Done\n");
+	//printf("Done\n");
 	return false;
 }
 
@@ -180,7 +183,7 @@ void do_receive_timesync_blocking(PcapLiveDevice* dev) {
 
 	pcpp::RawPacketVector packetVec;
 
-	dev->startCaptureBlockingMode(onPacketArrivesBlockingMode, &cookie, 10);
+	dev->startCaptureBlockingMode(onPacketArrivesBlockingMode, &cookie, 2);
 }
 
 
