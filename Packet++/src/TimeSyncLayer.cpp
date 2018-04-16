@@ -76,19 +76,19 @@ uint8_t TimeSyncLayer::getMagic() {
 
 
 uint32_t TimeSyncLayer::getReference_ts_lo() {
-	uint32_t reference_ts_lo = ntohs(getTimeSyncHeader()->reference_ts_lo);
+	uint32_t reference_ts_lo = ntohl(getTimeSyncHeader()->reference_ts_lo);
 	printf("reference_ts_lo:%u(%X),", reference_ts_lo, reference_ts_lo);
 	return reference_ts_lo;
 }
 
 uint32_t TimeSyncLayer::getReference_ts_hi() {
-	uint32_t reference_ts_hi = ntohs(getTimeSyncHeader()->reference_ts_hi);
+	uint32_t reference_ts_hi = ntohl(getTimeSyncHeader()->reference_ts_hi);
 	printf("reference_ts_hi:%u(%X),", reference_ts_hi, reference_ts_hi);
 	return reference_ts_hi;
 }
 
 uint32_t TimeSyncLayer::getEgDelta() {
-	uint32_t delta = getTimeSyncHeader()->egdelta;
+	uint32_t delta = ntohl(getTimeSyncHeader()->egdelta);
 	printf("Egdelta:%u", delta);
 	return delta;
 }
@@ -116,7 +116,7 @@ uint64_t TimeSyncLayer::getEgTs() {
 }
 
 uint32_t TimeSyncLayer::getEraTs() {
-	uint32_t eraTs = getTimeSyncHeader()->eraTs;
+	uint32_t eraTs = ntohl(getTimeSyncHeader()->eraTs);
 	printf("eraTs:%u\n", eraTs);
 	return eraTs;
 }
