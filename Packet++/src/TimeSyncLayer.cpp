@@ -77,13 +77,13 @@ uint8_t TimeSyncLayer::getMagic() {
 
 uint32_t TimeSyncLayer::getReference_ts_lo() {
 	uint32_t reference_ts_lo = getTimeSyncHeader()->reference_ts_lo;
-	printf("reference_ts_lo:%u,", reference_ts_lo);
+	printf("reference_ts_lo:%u(%X),", reference_ts_lo, reference_ts_lo);
 	return reference_ts_lo;
 }
 
 uint32_t TimeSyncLayer::getReference_ts_hi() {
 	uint32_t reference_ts_hi = getTimeSyncHeader()->reference_ts_hi;
-	printf("reference_ts_hi:%u,", reference_ts_hi);
+	printf("reference_ts_hi:%u(%X),", reference_ts_hi, reference_ts_hi);
 	return reference_ts_hi;
 }
 
