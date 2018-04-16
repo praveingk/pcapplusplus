@@ -80,7 +80,7 @@ static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveD
 	pcpp::Packet parsedPacket(packet);
 	//printf("here\n");
 	//printf("Packet : %s\n", parsedPacket.toString(true).c_str());
-	if (parsedPacket.isPacketOfType(pcpp::TIMESYNC)) {
+	if (parsedPacket.isPacketOfType(pcpp::TIMESYNC) || parsedPacket.isPacketOfType(pcpp::TS)) {
 		//printf("here\n");
 		TimeSyncLayer* tsLayer = parsedPacket.getLayerOfType<TimeSyncLayer>();
 		printf("Protocol = %lX\n", parsedPacket.m_ProtocolTypes);
