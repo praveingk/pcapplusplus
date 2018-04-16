@@ -75,15 +75,16 @@ void printAppVersion()
 
 static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveDevice* dev, void* cookie)
 {
-	//printf("Packet Arrvies\n");
+	printf("Packet Arrvies\n");
 	// parsed the raw packet
 	pcpp::Packet parsedPacket(packet);
-	//printf("here\n");
-	//printf("Packet : %s\n", parsedPacket.toString(true).c_str());
+	printf("here\n");
+	printf("Packet : %s\n", parsedPacket.toString(true).c_str());
+	printf("Protocol = %lX\n", parsedPacket.m_ProtocolTypes);
+
 	if (parsedPacket.isPacketOfType(pcpp::TIMESYNC) || parsedPacket.isPacketOfType(pcpp::TS)) {
 		//printf("here\n");
 		TimeSyncLayer* tsLayer = parsedPacket.getLayerOfType<TimeSyncLayer>();
-		printf("Protocol = %lX\n", parsedPacket.m_ProtocolTypes);
 
 		if (tsLayer->getCommand() == COMMAND_TIMESYNC_RESPONSE) {
 			tsLayer->dumpString();
