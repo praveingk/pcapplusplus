@@ -279,6 +279,7 @@ bool Packet::insertLayer(Layer* prevLayer, Layer* newLayer)
 	}
 
 	// add layer protocol to protocol collection
+	printf("Insert layer, %X\n", newLayer->getProtocol());
 	m_ProtocolTypes |= newLayer->getProtocol();
 	return true;
 }
@@ -490,7 +491,7 @@ std::string Packet::printPacketInfo(bool timeAsLocalTime)
 	}
 	else
 		snprintf(buf, sizeof(buf), "0000-00-00 00:00:00.000000");
-	
+
 	return "Packet length: " + dataLenStream.str() + " [Bytes], Arrival time: " + std::string(buf);
 }
 
