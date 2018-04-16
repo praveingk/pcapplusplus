@@ -23,9 +23,10 @@ namespace pcpp
 		uint8_t magic;
 		uint32_t reference_ts_lo;
 		uint32_t reference_ts_hi;
-		uint32_t delta;
-		uint8_t globalTs[6];
 		uint32_t eraTs;
+		uint32_t egdelta;
+		uint8_t igTs[6];
+		uint8_t egTs[6];
 	};
 #pragma pack(pop)
 
@@ -51,7 +52,8 @@ namespace pcpp
 		 * @param[in] destMac The destination MAC address
 		 * @param[in] etherType The EtherType to be used. It's an optional parameter, a value of 0 will be set if not provided
 		 */
-		TimeSyncLayer(const uint8_t command, const uint8_t magic, const uint32_t reference_ts_lo, const uint32_t reference_ts_hi, const uint32_t delta, const uint8_t *globalTs, const uint32_t eraTs);
+		TimeSyncLayer(const uint8_t command, const uint8_t magic, const uint32_t reference_ts_lo,
+			const uint32_t reference_ts_hi, const uint32_t eraTs, const uint32_t egdelta, const uint8_t *igts, const uint8_t *egts);
 
 		TimeSyncLayer();
 
@@ -69,9 +71,11 @@ namespace pcpp
 
 	  uint32_t getReference_ts_hi();
 
-		uint32_t getDelta();
+		uint32_t getEgDelta();
 
-		uint64_t getGlobalTs();
+		uint64_t getIgTs();
+
+		uint64_t getEgTs();
 
 		uint32_t getEraTs();
 

@@ -21,7 +21,8 @@
 namespace pcpp
 {
 
-TimeSyncLayer::TimeSyncLayer(const uint8_t command, const uint8_t magic, const uint32_t reference_ts_lo, const uint32_t reference_ts_hi, const uint32_t delta, const uint8_t* globalTs, const uint32_t eraTs) : Layer()
+TimeSyncLayer::TimeSyncLayer(const uint8_t command, const uint8_t magic, const uint32_t reference_ts_lo,
+	const uint32_t reference_ts_hi, const uint32_t eraTs, const uint32_t egdelta, const uint8_t* igTs,  const uint8_t* egTs) : Layer()
 {
 	m_DataLen = sizeof(timesync_t);
 	m_Data = new uint8_t[m_DataLen];
@@ -32,9 +33,11 @@ TimeSyncLayer::TimeSyncLayer(const uint8_t command, const uint8_t magic, const u
 	tsHdr->magic = magic;
 	tsHdr->reference_ts_lo = reference_ts_lo;
 	tsHdr->reference_ts_hi = reference_ts_hi;
-	tsHdr->delta = delta;
+	tsHdr->egdelta = egdelta;
 	tsHdr->eraTs = eraTs;
-	memcpy(tsHdr->globalTs, globalTs, 6);
+	memcpy(tsHdr->igTs, igTs, 6);
+	memcpy(tsHdr->egTs, egTs, 6);
+
 
 	m_Protocol = TIMESYNC;
 }
@@ -84,20 +87,31 @@ uint32_t TimeSyncLayer::getReference_ts_hi() {
 	return reference_ts_hi;
 }
 
-uint32_t TimeSyncLayer::getDelta() {
-	uint32_t delta = getTimeSyncHeader()->delta;
-	printf("delta:%u", delta);
+uint32_t TimeSyncLayer::getEgDelta() {
+	uint32_t delta = getTimeSyncHeader()->egdelta;
+	printf("Egdelta:%u", delta);
 	return delta;
 }
 
-uint64_t TimeSyncLayer::getGlobalTs() {
+uint64_t TimeSyncLayer::getIgTs() {
 	uint64_t timestamp = 0;
-	for (int i=14; i<=19; i++) {
+	for (int i=18; i<=23; i++) {
 		//printf("ingressTS :%X\n", m_Data[i]);
 		timestamp = (timestamp | m_Data[i]) << 8;
 	}
 	timestamp = timestamp >>8;
-	printf("globalTS:%lu,", timestamp);
+	printf("IgTs:%lu,", timestamp);
+	return timestamp;
+}
+
+uint64_t TimeSyncLayer::getEgTs() {
+	uint64_t timestamp = 0;
+	for (int i=24; i<=29; i++) {
+		//printf("ingressTS :%X\n", m_Data[i]);
+		timestamp = (timestamp | m_Data[i]) << 8;
+	}
+	timestamp = timestamp >>8;
+	printf("EgTs:%lu,", timestamp);
 	return timestamp;
 }
 
@@ -126,8 +140,9 @@ void TimeSyncLayer::dumpString() {
 	getMagic();
 	getReference_ts_hi();
 	getReference_ts_lo();
-	getDelta();
-	getGlobalTs();
 	getEraTs();
+	getEgDelta();
+	getIgTs();
+	getEgTs();
 }
 } // namespace pcpp
