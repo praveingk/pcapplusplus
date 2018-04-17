@@ -71,7 +71,7 @@ void printAppVersion()
  exit(0);
 }
 
-
+uint32_t max_ns = 1000000000;
 
 static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveDevice* dev, void* cookie)
 {
@@ -87,9 +87,21 @@ static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveD
 		TimeSyncLayer* tsLayer = parsedPacket.getLayerOfType<TimeSyncLayer>();
 
 		if (tsLayer->getCommand() == COMMAND_TIMESYNC_RESPONSE) {
+			//Not resorting to functions due to optimization.
+			clock_gettime(CLOCK_REALTIME, &recvtsp);
 			tsLayer->dumpString();
 			uint32_t calc_ref_sec = tsLayer->getReference_ts_hi();
 			uint32_t calc_ref_nsec = tsLayer->getReference_ts_lo();
+			uint32_t era_hi = tsLayer->getEraTs();
+			uint32_t switch_delay = (tsLayer->getEgTs() - tsLayer->getIgTs());
+			uint32_t e2edelay = (recvtsp.tv_sec - sendtsp.tv_sec) * (max_ns) + (recvtsp.tv_nsec - sendtsp.tv_nsec);
+			calc_ref_sec = calc_ref_sec + era_hi + (switch_delay/max_ns) + (e2edelay/max_ns);
+			calc_ref_nsec = calc_ref_nsec + (switch_delay%max_ns) + e2edelay%max_ns;
+			printf("Switch Delay = %uns\n", switch_delay);
+			printf("End-to-End Delay = %uns\n", e2edelay);
+
+			printf("Time calculated : hi = %u, lo = %u\n", calc_ref_sec, calc_ref_nsec);
+
 
 		}
 		//printf("%s", tsLayer->toString().c_str());
@@ -141,7 +153,7 @@ void do_timesync(PcapLiveDevice* pDevice) {
 	newPacket.addLayer(&newEthernetLayer);
 	newPacket.addLayer(&newTimeSyncLayer);
 	// record Time snapshot1 for end-to-end delay measurement.
-
+	clock_gettime(CLOCK_REALTIME, &sendtsp);
 	pDevice->sendPacket(&newPacket);
 	do_receive_timesync_blocking(pDevice);
 

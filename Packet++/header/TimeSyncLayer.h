@@ -21,8 +21,8 @@ namespace pcpp
 	struct timesync_t {
 		uint8_t command;
 		uint8_t magic;
-		uint32_t reference_ts_lo;
 		uint32_t reference_ts_hi;
+		uint32_t reference_ts_lo;
 		uint32_t eraTs;
 		uint32_t egdelta;
 		uint8_t igTs[6];

@@ -89,7 +89,7 @@ uint32_t TimeSyncLayer::getReference_ts_hi() {
 
 uint32_t TimeSyncLayer::getEgDelta() {
 	uint32_t delta = ntohl(getTimeSyncHeader()->egdelta);
-	printf("Egdelta:%u", delta);
+	printf("Egdelta:%u,", delta);
 	return delta;
 }
 
@@ -117,7 +117,7 @@ uint64_t TimeSyncLayer::getEgTs() {
 
 uint32_t TimeSyncLayer::getEraTs() {
 	uint32_t eraTs = ntohl(getTimeSyncHeader()->eraTs);
-	printf("eraTs:%u\n", eraTs);
+	printf("eraTs:%u,", eraTs);
 	return eraTs;
 }
 
@@ -144,5 +144,6 @@ void TimeSyncLayer::dumpString() {
 	getEgDelta();
 	getIgTs();
 	getEgTs();
+	printf("\n");
 }
 } // namespace pcpp
