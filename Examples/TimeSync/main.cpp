@@ -98,10 +98,12 @@ static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveD
 			uint32_t elapsed_lo = tsLayer->getEgTs() % max_ns;
 			uint32_t elapsed_hi = tsLayer->getEgTs() / max_ns;
 			clock_gettime(CLOCK_REALTIME, &calctsp);
-			calc_ref_sec = calc_ref_sec + era_hi + elapsed_hi + (e2edelay/max_ns) + (calctsp.tv_sec - calctsp.tv_nsec);
-			calc_ref_nsec = calc_ref_nsec + elapsed_lo + e2edelay%max_ns + (calctsp.tv_nsec - calctsp.tv_nsec);
+			calc_ref_sec = calc_ref_sec + era_hi + elapsed_hi + (e2edelay/max_ns) + (calctsp.tv_sec - recvtsp.tv_sec);
+			calc_ref_nsec = calc_ref_nsec + elapsed_lo + e2edelay%max_ns + (calctsp.tv_nsec - recvtsp.tv_nsec);
 			printf("\nSwitch Delay = %uns\n", switch_delay);
 			printf("End-to-End Delay = %uns\n", e2edelay);
+			printf("Elapsed hi =%us, lo=%uns\n", elapsed_hi, elapsed_lo);
+			printf("Calc delay hi= %us, lo=%uns\n", calctsp.tv_sec - recvtsp.tv_sec, calctsp.tv_nsec - recvtsp.tv_nsec);
 
 			printf("Time calculated : hi = %u, lo = %u\n", calc_ref_sec, calc_ref_nsec);
 			printf("Time cur ref : hi = %u, lo = %u\n", calctsp.tv_sec, calctsp.tv_nsec);
