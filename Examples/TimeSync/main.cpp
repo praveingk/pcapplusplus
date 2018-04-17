@@ -81,7 +81,7 @@ static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveD
 	printf("here\n");
 	printf("Packet : %s\n", parsedPacket.toString(true).c_str());
 	printf("Protocol = %lX\n", parsedPacket.m_ProtocolTypes);
-
+	struct timespec calctsp;
 	if (parsedPacket.isPacketOfType(pcpp::TIMESYNC) || parsedPacket.isPacketOfType(pcpp::TS)) {
 		//printf("here\n");
 		TimeSyncLayer* tsLayer = parsedPacket.getLayerOfType<TimeSyncLayer>();
@@ -95,13 +95,16 @@ static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveD
 			uint32_t era_hi = tsLayer->getEraTs();
 			uint32_t switch_delay = (tsLayer->getEgTs() - tsLayer->getIgTs());
 			uint32_t e2edelay = (recvtsp.tv_sec - sendtsp.tv_sec) * (max_ns) + (recvtsp.tv_nsec - sendtsp.tv_nsec);
-			calc_ref_sec = calc_ref_sec + era_hi + (switch_delay/max_ns) + (e2edelay/max_ns);
-			calc_ref_nsec = calc_ref_nsec + (switch_delay%max_ns) + e2edelay%max_ns;
-			printf("Switch Delay = %uns\n", switch_delay);
+			uint32_t elapsed_lo = tsLayer->getEgTs() % max_ns;
+			uint32_t elapsed_hi = tsLayer->getEgTs() / max_ns;
+			clock_gettime(CLOCK_REALTIME, &calctsp);
+			calc_ref_sec = calc_ref_sec + era_hi + elapsed_hi + (e2edelay/max_ns) + (calctsp.tv_sec - calctsp.tv_nsec);
+			calc_ref_nsec = calc_ref_nsec + elapsed_lo + e2edelay%max_ns + (calctsp.tv_nsec - calctsp.tv_nsec);
+			printf("\nSwitch Delay = %uns\n", switch_delay);
 			printf("End-to-End Delay = %uns\n", e2edelay);
 
 			printf("Time calculated : hi = %u, lo = %u\n", calc_ref_sec, calc_ref_nsec);
-
+			printf("Time cur ref : hi = %u, lo = %u\n", calctsp.tv_sec, calctsp.tv_nsec);
 
 		}
 		//printf("%s", tsLayer->toString().c_str());
