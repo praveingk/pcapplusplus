@@ -158,11 +158,12 @@ void do_timesync(PcapLiveDevice* pDevice) {
 	uint8_t igTs[6];
 	uint8_t egTs[6];
 
-	pcpp::EthLayer newEthernetLayer(pDevice->getMacAddress(), pcpp::MacAddress("ff:ff:ff:ff:ff:ff"), 0x1235);
+	pcpp::EthLayer transDelayEthernetLayer(pDevice->getMacAddress(), pcpp::MacAddress("ff:ff:ff:ff:ff:ff"), 0x1235);
 	pcpp::TimeSyncLayer transDelayTimeSyncLayer((uint8_t)COMMAND_TIMESYNC_TRANSDELAY, (uint8_t)0,(uint32_t)0, (uint32_t)0, (uint32_t)0, (uint32_t)0, igTs, egTs);
+	pcpp::EthLayer newEthernetLayer(pDevice->getMacAddress(), pcpp::MacAddress("ff:ff:ff:ff:ff:ff"), 0x1235);
 	pcpp::TimeSyncLayer newTimeSyncLayer((uint8_t)COMMAND_TIMESYNC_REQ, (uint8_t)0,(uint32_t)0, (uint32_t)0, (uint32_t)0, (uint32_t)0, igTs, egTs);
 
-	delayPacket.addLayer(&newEthernetLayer);
+	delayPacket.addLayer(&transDelayEthernetLayer);
 	delayPacket.addLayer(&transDelayTimeSyncLayer);
 
 	reqPacket.addLayer(&newEthernetLayer);
