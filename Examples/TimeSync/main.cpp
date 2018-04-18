@@ -29,8 +29,10 @@ using namespace pcpp;
 #define COMMAND_TIMERESET 0x1
 #define COMMAND_TIMESYNC_REQ 0x2
 #define COMMAND_TIMESYNC_RESPONSE 0x3
-
-struct timespec sendtsp;
+#define COMMAND_TIMESYNC_TRANSDELAY 0x4
+#define COMMAND_TIMESYNC_TRANSDELAY_RESPONSE 0x5
+struct timespec delaytsp;
+struct timespec reqtsp;
 struct timespec recvtsp;
 
 
@@ -75,6 +77,7 @@ uint32_t max_ns = 1000000000;
 
 static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveDevice* dev, void* cookie)
 {
+	clock_gettime(CLOCK_REALTIME, &recvtsp);
 	printf("Packet Arrvies\n");
 	// parsed the raw packet
 	pcpp::Packet parsedPacket(packet);
@@ -85,16 +88,17 @@ static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveD
 	if (parsedPacket.isPacketOfType(pcpp::TIMESYNC) || parsedPacket.isPacketOfType(pcpp::TS)) {
 		//printf("here\n");
 		TimeSyncLayer* tsLayer = parsedPacket.getLayerOfType<TimeSyncLayer>();
-
+		if (tsLayer->getCommand() == COMMAND_TIMESYNC_TRANSDELAY_RESPONSE) {
+			tsLayer->dumpString();
+		}
 		if (tsLayer->getCommand() == COMMAND_TIMESYNC_RESPONSE) {
 			//Not resorting to functions due to optimization.
-			clock_gettime(CLOCK_REALTIME, &recvtsp);
 			tsLayer->dumpString();
 			uint32_t calc_ref_sec = tsLayer->getReference_ts_hi();
 			uint32_t calc_ref_nsec = tsLayer->getReference_ts_lo();
 			uint32_t era_hi = tsLayer->getEraTs();
 			uint32_t switch_delay = (tsLayer->getEgTs() - tsLayer->getIgTs());
-			uint32_t e2edelay = (recvtsp.tv_sec - sendtsp.tv_sec) * (max_ns) + (recvtsp.tv_nsec - sendtsp.tv_nsec);
+			uint32_t e2edelay = (recvtsp.tv_sec - reqtsp.tv_sec) * (max_ns) + (recvtsp.tv_nsec - reqtsp.tv_nsec);
 			uint32_t elapsed_lo = tsLayer->getEgTs() % max_ns;
 			uint32_t elapsed_hi = tsLayer->getEgTs() / max_ns;
 			clock_gettime(CLOCK_REALTIME, &calctsp);
@@ -148,18 +152,27 @@ void do_reset_time(PcapLiveDevice* pDevice) {
 }
 
 void do_timesync(PcapLiveDevice* pDevice) {
-	pcpp::Packet newPacket(100);
+	pcpp::Packet delayPacket(100);
+	pcpp::Packet reqPacket(100);
 	uint8_t globalTs[6];
 	uint8_t igTs[6];
 	uint8_t egTs[6];
 
 	pcpp::EthLayer newEthernetLayer(pDevice->getMacAddress(), pcpp::MacAddress("ff:ff:ff:ff:ff:ff"), 0x1235);
+	pcpp::TimeSyncLayer transDelayTimeSyncLayer((uint8_t)COMMAND_TIMESYNC_TRANSDELAY, (uint8_t)0,(uint32_t)0, (uint32_t)0, (uint32_t)0, (uint32_t)0, igTs, egTs);
 	pcpp::TimeSyncLayer newTimeSyncLayer((uint8_t)COMMAND_TIMESYNC_REQ, (uint8_t)0,(uint32_t)0, (uint32_t)0, (uint32_t)0, (uint32_t)0, igTs, egTs);
-	newPacket.addLayer(&newEthernetLayer);
-	newPacket.addLayer(&newTimeSyncLayer);
+
+	delayPacket.addLayer(&newEthernetLayer);
+	delayPacket.addLayer(&transDelayTimeSyncLayer);
+
+	reqPacket.addLayer(&newEthernetLayer);
+	reqPacket.addLayer(&newTimeSyncLayer);
 	// record Time snapshot1 for end-to-end delay measurement.
-	clock_gettime(CLOCK_REALTIME, &sendtsp);
-	pDevice->sendPacket(&newPacket);
+	clock_gettime(CLOCK_REALTIME, &delaytsp);
+	pDevice->sendPacket(&delayPacket);
+	clock_gettime(CLOCK_REALTIME, &reqtsp);
+
+	pDevice->sendPacket(&reqPacket);
 	do_receive_timesync_blocking(pDevice);
 
 }
