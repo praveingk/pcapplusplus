@@ -85,7 +85,7 @@ static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveD
 	printf("Packet : %s\n", parsedPacket.toString(true).c_str());
 	printf("Protocol = %lX\n", parsedPacket.m_ProtocolTypes);
 	struct timespec calctsp;
-	uint64_t trans_delay_offset;
+	uint64_t trans_delay_offset = 0;
 	if (parsedPacket.isPacketOfType(pcpp::TIMESYNC) || parsedPacket.isPacketOfType(pcpp::TS)) {
 		//printf("here\n");
 		TimeSyncLayer* tsLayer = parsedPacket.getLayerOfType<TimeSyncLayer>();
@@ -118,10 +118,10 @@ static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveD
 			printf("Reply Delay = %luns\n", replydelay);
 			printf("-----------------\n");
 			printf("Elapsed hi =%us, lo=%uns\n", elapsed_hi, elapsed_lo);
-			printf("Calc delay hi= %us, lo=%uns\n", calctsp.tv_sec - recvtsp.tv_sec, calctsp.tv_nsec - recvtsp.tv_nsec);
+			printf("Calc delay hi= %lus, lo=%luns\n", calctsp.tv_sec - recvtsp.tv_sec, calctsp.tv_nsec - recvtsp.tv_nsec);
 			printf("-----------------\n");
 			printf("Time calculated : hi = %u, lo = %u\n", calc_ref_sec, calc_ref_nsec);
-			printf("Time cur ref : hi = %u, lo = %u\n", calctsp.tv_sec, calctsp.tv_nsec);
+			printf("Time cur ref : hi = %lu, lo = %lu\n", calctsp.tv_sec, calctsp.tv_nsec);
 			printf("************************************************\n");
 
 
@@ -151,7 +151,6 @@ void do_receive_timesync_blocking(PcapLiveDevice* dev) {
 
 void do_reset_time(PcapLiveDevice* pDevice) {
 	struct timespec tsp;
-	uint8_t globalTs[6];
 	uint8_t igTs[6];
 	uint8_t egTs[6];
 	pcpp::Packet newPacket(100);
@@ -167,7 +166,6 @@ void do_reset_time(PcapLiveDevice* pDevice) {
 void do_timesync(PcapLiveDevice* pDevice) {
 	pcpp::Packet delayPacket(100);
 	pcpp::Packet reqPacket(100);
-	uint8_t globalTs[6];
 	uint8_t igTs[6];
 	uint8_t egTs[6];
 
@@ -198,7 +196,6 @@ int main(int argc, char* argv[])
 	//Get arguments from user for incoming interface and outgoing interface
 
 	string iface = "", source_mac = "", dest_mac = "";
-	int receive = 0;
 	int reset_time = 0;
 	int timesync = 0;
 	int optionIndex = 0;
@@ -225,7 +222,6 @@ int main(int argc, char* argv[])
 				timesync  = 1;
 				break;
 			case 'r':
-				receive  = 1;
 				break;
 			case 'h':
 				printUsage();
