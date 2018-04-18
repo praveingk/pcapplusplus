@@ -74,6 +74,7 @@ void printAppVersion()
 }
 
 uint32_t max_ns = 1000000000;
+uint64_t trans_delay_offset = 0;
 
 static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveDevice* dev, void* cookie)
 {
@@ -85,7 +86,6 @@ static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveD
 	printf("Packet : %s\n", parsedPacket.toString(true).c_str());
 	printf("Protocol = %lX\n", parsedPacket.m_ProtocolTypes);
 	struct timespec calctsp;
-	uint64_t trans_delay_offset = 0;
 	if (parsedPacket.isPacketOfType(pcpp::TIMESYNC) || parsedPacket.isPacketOfType(pcpp::TS)) {
 		//printf("here\n");
 		TimeSyncLayer* tsLayer = parsedPacket.getLayerOfType<TimeSyncLayer>();
