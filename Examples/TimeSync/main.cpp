@@ -85,11 +85,13 @@ static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveD
 	printf("Packet : %s\n", parsedPacket.toString(true).c_str());
 	printf("Protocol = %lX\n", parsedPacket.m_ProtocolTypes);
 	struct timespec calctsp;
+	uint64_t trans_delay_offset;
 	if (parsedPacket.isPacketOfType(pcpp::TIMESYNC) || parsedPacket.isPacketOfType(pcpp::TS)) {
 		//printf("here\n");
 		TimeSyncLayer* tsLayer = parsedPacket.getLayerOfType<TimeSyncLayer>();
 		if (tsLayer->getCommand() == COMMAND_TIMESYNC_TRANSDELAY_RESPONSE) {
 			tsLayer->dumpString();
+			trans_delay_offset = tsLayer->getIgTs();
 		}
 		if (tsLayer->getCommand() == COMMAND_TIMESYNC_RESPONSE) {
 			//Not resorting to functions due to optimization.
@@ -101,16 +103,27 @@ static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveD
 			uint32_t e2edelay = (recvtsp.tv_sec - reqtsp.tv_sec) * (max_ns) + (recvtsp.tv_nsec - reqtsp.tv_nsec);
 			uint32_t elapsed_lo = tsLayer->getEgTs() % max_ns;
 			uint32_t elapsed_hi = tsLayer->getEgTs() / max_ns;
+			uint64_t clientdelay = (reqtsp.tv_sec - delaytsp.tv_sec) * (max_ns) + (reqtsp.tv_nsec - delaytsp.tv_nsec);
+			uint64_t onewaydelay = (tsLayer->getIgTs() - trans_delay_offset) - clientdelay;
+			uint64_t replydelay = e2edelay - onewaydelay;
 			clock_gettime(CLOCK_REALTIME, &calctsp);
 			calc_ref_sec = calc_ref_sec + era_hi + elapsed_hi + (e2edelay/max_ns) + (calctsp.tv_sec - recvtsp.tv_sec);
 			calc_ref_nsec = calc_ref_nsec + elapsed_lo + e2edelay%max_ns + (calctsp.tv_nsec - recvtsp.tv_nsec);
-			printf("\nSwitch Delay = %uns\n", switch_delay);
+
+			printf("\n************************************************\n");
+			printf("Switch Delay = %uns\n", switch_delay);
+			printf("Inter-packet Delay = %luns\n", clientdelay);
 			printf("End-to-End Delay = %uns\n", e2edelay);
+			printf("Oneway Delay = %luns\n", onewaydelay);
+			printf("Reply Delay = %luns\n", replydelay);
+			printf("-----------------\n");
 			printf("Elapsed hi =%us, lo=%uns\n", elapsed_hi, elapsed_lo);
 			printf("Calc delay hi= %us, lo=%uns\n", calctsp.tv_sec - recvtsp.tv_sec, calctsp.tv_nsec - recvtsp.tv_nsec);
-
+			printf("-----------------\n");
 			printf("Time calculated : hi = %u, lo = %u\n", calc_ref_sec, calc_ref_nsec);
 			printf("Time cur ref : hi = %u, lo = %u\n", calctsp.tv_sec, calctsp.tv_nsec);
+			printf("************************************************\n");
+
 
 		}
 		//printf("%s", tsLayer->toString().c_str());
