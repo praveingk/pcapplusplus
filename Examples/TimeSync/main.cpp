@@ -183,9 +183,9 @@ void do_timesync(PcapLiveDevice* pDevice) {
 	reqPacket.addLayer(&newTimeSyncLayer);
 	// record Time snapshot1 for end-to-end delay measurement.
 	clock_gettime(CLOCK_REALTIME, &delaytsp);
-	pDevice->sendPacket(&delayPacket);
 	clock_gettime(CLOCK_REALTIME, &reqtsp);
-
+	pDevice->sendPacket(&delayPacket);
+	//clock_gettime(CLOCK_REALTIME, &reqtsp);
 	pDevice->sendPacket(&reqPacket);
 	do_receive_timesync_blocking(pDevice);
 
