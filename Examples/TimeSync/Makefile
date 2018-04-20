@@ -21,7 +21,7 @@ CUR_TARGET := $(notdir $(shell pwd))
 
 .SILENT:
 
-all: dependents ArpSpoofing
+all: dependents Timesync
 
 start:
 	@echo '==> Building target: $(CUR_TARGET)'
@@ -33,7 +33,7 @@ create-directories:
 dependents:
 	@cd $(PCAPPLUSPLUS_HOME) && $(MAKE) libs
 
-ArpSpoofing: start create-directories $(OBJS_FILENAMES)
+Timesync: start create-directories $(OBJS_FILENAMES)
 	@$(G++) $(PCAPPP_LIBS_DIR) $(PCAPPP_BUILD_FLAGS) -o "TimeSync$(BIN_EXT)" $(OBJS_FILENAMES) $(PCAPPP_LIBS)
 	@$(PCAPPP_POST_BUILD)
 	@echo 'Finished successfully building: $(CUR_TARGET)'

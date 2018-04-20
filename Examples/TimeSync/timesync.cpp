@@ -18,6 +18,7 @@
 #include <ArpLayer.h>
 #include <Logger.h>
 #include <time.h>
+#include <DpdkDeviceList.h>
 #if !defined(WIN32) && !defined(WINx64) //for using ntohl, ntohs, etc.
 #include <in.h>
 #endif
@@ -35,6 +36,7 @@ struct timespec delaytsp;
 struct timespec reqtsp;
 struct timespec recvtsp;
 
+int DPDK_PORT = -1;
 
 static struct option L3FwdOptions[] =
 {
@@ -240,38 +242,63 @@ int main(int argc, char* argv[])
 	//Both incoming and outgoing interfaces must be provided by user
 	if(iface == "")
 	{
-		printUsage();
-		exit(-1);
+		printf("No Interface specified, Trying to use dpdk\n");
+		DPDK_PORT = 1;
+	}
+
+	if (DPDK_PORT != -1) {
+		printf("DPDK devices initialized:\n");
+			vector<DpdkDevice*> deviceList = DpdkDeviceList::getInstance().getDpdkDeviceList();
+		for (vector<DpdkDevice*>::iterator iter = deviceList.begin(); iter != deviceList.end(); iter++)
+		{
+				DpdkDevice* dev = *iter;
+				printf("    Port #%d: MAC address='%s'; PCI address='%s'; PMD='%s'\n",
+								dev->getDeviceId(),
+								dev->getMacAddress().toString().c_str(),
+								dev->getPciAddress().toString().c_str(),
+								dev->getPMDName().c_str());
+		}
+
+		int sendPacketsToPort = DPDK_PORT;
+		DpdkDevice* sendPacketsTo = DpdkDeviceList::getInstance().getDeviceByPort(sendPacketsToPort);
+		if (sendPacketsTo != NULL && !sendPacketsTo->open())
+		{
+				printf("Could not open port#%d for sending packets\n", sendPacketsToPort);
+				exit(1);
+		}
+
+		DpdkDevice::LinkStatus linkstatus;
+		sendPacketsTo->getLinkStatus(linkstatus);
+
+		printf("The link is %s\n",linkstatus.linkUp?"UP":"Down");
+
+		if(!linkstatus.linkUp){
+				printf("Exiting...\n");
+				exit(1);
+		}
 	}
 
 	//IPv4Address ifaceAddr(iface);
 	printf("%s\n", iface.c_str());
-	//printf ("%s\n",ifaceAddr.toString().c_str());
-
 	PcapLiveDevice* pIfaceDevice = PcapLiveDeviceList::getInstance().getPcapLiveDeviceByName(iface);
-
-	//Verifying interface is valid
-	if (pIfaceDevice == NULL)
-	{
-		printf("Cannot find interface. Exiting...\n");
-		exit(-1);
-	}
-
-
-	//Opening interface device
-	if (!pIfaceDevice->open())
-	{
-		printf("Cannot open interface. Exiting...\n");
-		exit(-1);
-	}
-
-	if (reset_time == 1) {
-		do_reset_time(pIfaceDevice);
-		exit(0);
-	}
-
-	if (timesync == 1) {
-		do_timesync(pIfaceDevice);
-		exit(0);
+	if (DPDK_PORT == -1) {
+		if (pIfaceDevice == NULL)
+		{
+			printf("Cannot find interface. Exiting...\n");
+			exit(-1);
+		}
+		if (!pIfaceDevice->open())
+		{
+			printf("Cannot open interface. Exiting...\n");
+			exit(-1);
+		}
+		if (reset_time == 1) {
+			do_reset_time(pIfaceDevice);
+			exit(0);
+		}
+		if (timesync == 1) {
+			do_timesync(pIfaceDevice);
+			exit(0);
+		}
 	}
 }
