@@ -36,6 +36,12 @@ struct timespec delaytsp;
 struct timespec reqtsp;
 struct timespec recvtsp;
 
+#define MBUFF_POOL_SIZE 1023  // (2^10 - 1) allow DPDK to hold these many packets in memory (at max).
+                              // See "sending algorithm" in DpdkDevice.h
+#define CORE_MASK 341  // in binary it is 101010101. Meaning core # 8,6,4, 2 and 0 would be given to DPDK
+                       // core 0 would be used as the DPDK master core by default. To change this, need to
+                       // change DpdkDeviceList::initDpdk() in DpdkDeviceList.cpp and rebuild PcapPlusPlus
+
 int DPDK_PORT = -1;
 
 static struct option L3FwdOptions[] =
