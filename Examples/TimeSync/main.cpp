@@ -104,17 +104,19 @@ static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveD
 			uint32_t elapsed_lo = tsLayer->getEgTs() % max_ns;
 			uint32_t elapsed_hi = tsLayer->getEgTs() / max_ns;
 			uint64_t clientdelay = (reqtsp.tv_sec - delaytsp.tv_sec) * (max_ns) + (reqtsp.tv_nsec - delaytsp.tv_nsec);
-			uint64_t onewaydelay = (tsLayer->getIgTs() - trans_delay_offset) - clientdelay;
-			uint64_t replydelay = e2edelay - onewaydelay;
+			double onewaydelay = (tsLayer->getIgTs() - trans_delay_offset) - clientdelay;
+			double onewaydelay_woclient = (tsLayer->getIgTs() - trans_delay_offset);
+			uint64_t replydelay = e2edelay - onewaydelay_woclient;
 			clock_gettime(CLOCK_REALTIME, &calctsp);
 			calc_ref_sec = calc_ref_sec + era_hi + elapsed_hi + (e2edelay/max_ns) + (calctsp.tv_sec - recvtsp.tv_sec);
 			calc_ref_nsec = calc_ref_nsec + elapsed_lo + e2edelay%max_ns + (calctsp.tv_nsec - recvtsp.tv_nsec);
 
 			printf("\n************************************************\n");
 			printf("Switch Delay = %uns\n", switch_delay);
-			printf("Inter-packet Delay = %luns\n", clientdelay);
+			printf("Inter-packet Delay from client = %luns\n", clientdelay);
 			printf("End-to-End Delay = %uns\n", e2edelay);
-			printf("Oneway Delay = %luns\n", onewaydelay);
+			printf("Oneway Delay = %ldns\n", onewaydelay);
+			printf("Oneway Delay wo clientdelay = %ldns\n", onewaydelay_woclient);
 			printf("Reply Delay = %luns\n", replydelay);
 			printf("-----------------\n");
 			printf("Elapsed hi =%us, lo=%uns\n", elapsed_hi, elapsed_lo);

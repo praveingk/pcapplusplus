@@ -34,7 +34,7 @@ dependents:
 	@cd $(PCAPPLUSPLUS_HOME) && $(MAKE) libs
 
 ArpSpoofing: start create-directories $(OBJS_FILENAMES)
-	@$(G++) $(PCAPPP_LIBS_DIR) $(PCAPPP_BUILD_FLAGS) -o "./Bin/TimeSync$(BIN_EXT)" $(OBJS_FILENAMES) $(PCAPPP_LIBS)
+	@$(G++) $(PCAPPP_LIBS_DIR) $(PCAPPP_BUILD_FLAGS) -o "TimeSync$(BIN_EXT)" $(OBJS_FILENAMES) $(PCAPPP_LIBS)
 	@$(PCAPPP_POST_BUILD)
 	@echo 'Finished successfully building: $(CUR_TARGET)'
 	@echo ' '
