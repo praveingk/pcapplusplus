@@ -247,8 +247,15 @@ int main(int argc, char* argv[])
 	}
 
 	if (DPDK_PORT != -1) {
+		if(DpdkDeviceList::initDpdk(CORE_MASK, MBUFF_POOL_SIZE))
+			printf("DPDK initialization completed successfully\n");
+		else{
+			printf("DPDK initialization failed!!\n");
+			exit(1);
+		}
+
 		printf("DPDK devices initialized:\n");
-			vector<DpdkDevice*> deviceList = DpdkDeviceList::getInstance().getDpdkDeviceList();
+		vector<DpdkDevice*> deviceList = DpdkDeviceList::getInstance().getDpdkDeviceList();
 		for (vector<DpdkDevice*>::iterator iter = deviceList.begin(); iter != deviceList.end(); iter++)
 		{
 				DpdkDevice* dev = *iter;
