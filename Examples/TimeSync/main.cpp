@@ -105,7 +105,7 @@ static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveD
 			uint32_t elapsed_hi = tsLayer->getEgTs() / max_ns;
 			uint64_t clientdelay = (reqtsp.tv_sec - delaytsp.tv_sec) * (max_ns) + (reqtsp.tv_nsec - delaytsp.tv_nsec);
 			double onewaydelay = (tsLayer->getIgTs() - trans_delay_offset) - clientdelay;
-			double onewaydelay_woclient = (tsLayer->getIgTs() - trans_delay_offset);
+			uint32_t onewaydelay_woclient = (tsLayer->getIgTs() - trans_delay_offset);
 			uint64_t replydelay = e2edelay - onewaydelay_woclient;
 			clock_gettime(CLOCK_REALTIME, &calctsp);
 			calc_ref_sec = calc_ref_sec + era_hi + elapsed_hi + (e2edelay/max_ns) + (calctsp.tv_sec - recvtsp.tv_sec);
@@ -116,7 +116,7 @@ static bool onPacketArrivesBlockingMode(pcpp::RawPacket* packet, pcpp::PcapLiveD
 			printf("Inter-packet Delay from client = %luns\n", clientdelay);
 			printf("End-to-End Delay = %uns\n", e2edelay);
 			printf("Oneway Delay = %ldns\n", onewaydelay);
-			printf("Oneway Delay wo clientdelay = %ldns\n", onewaydelay_woclient);
+			printf("Oneway Delay wo clientdelay = %uns\n", onewaydelay_woclient);
 			printf("Reply Delay = %luns\n", replydelay);
 			printf("-----------------\n");
 			printf("Elapsed hi =%us, lo=%uns\n", elapsed_hi, elapsed_lo);
