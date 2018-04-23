@@ -16,6 +16,8 @@
 #include "rte_config.h"
 #include "rte_ethdev.h"
 #include "rte_errno.h"
+#include "rte_malloc.h"
+#include "rte_cycles.h"
 #include <string>
 #include <stdint.h>
 #include <unistd.h>
@@ -24,7 +26,7 @@
 
 #define MBUF_SIZE (MBUF_DATA_SIZE + sizeof(struct rte_mbuf) + RTE_PKTMBUF_HEADROOM)
 
-#define RX_BURST_SIZE 64
+#define MAX_BURST_SIZE 64
 
 namespace pcpp
 {
@@ -59,6 +61,28 @@ bool MBufRawPacket::init(DpdkDevice* device)
 	}
 
 	m_Device = device;
+
+	return true;
+}
+
+bool MBufRawPacket::initFromRawPacket(const RawPacket* rawPacket, DpdkDevice* device)
+{
+	if (!init(device))
+		return false;
+
+	m_RawPacketSet = false;
+
+	// mbuf is allocated with length of 0, need to adjust it to the size of other
+	if (rte_pktmbuf_append(m_MBuf, rawPacket->getRawDataLen()) == NULL)
+	{
+		LOG_ERROR("Couldn't append %d bytes to mbuf", rawPacket->getRawDataLen());
+		return false;
+	}
+
+	m_pRawData = rte_pktmbuf_mtod(m_MBuf, uint8_t*);
+	m_RawDataLen = rte_pktmbuf_pkt_len(m_MBuf);
+
+	copyDataFrom(*rawPacket, false);
 
 	return true;
 }
@@ -126,7 +150,7 @@ MBufRawPacket& MBufRawPacket::operator=(const MBufRawPacket& other)
 	return *this;
 }
 
-bool MBufRawPacket::setRawData(const uint8_t* pRawData, int rawDataLen, timeval timestamp)
+bool MBufRawPacket::setRawData(const uint8_t* pRawData, int rawDataLen, timeval timestamp, LinkLayerType layerType, int frameLength)
 {
 	if (rawDataLen > MBUF_DATA_SIZE)
 	{
@@ -167,6 +191,8 @@ bool MBufRawPacket::setRawData(const uint8_t* pRawData, int rawDataLen, timeval 
 	delete [] pRawData;
 	m_TimeStamp = timestamp;
 	m_RawPacketSet = true;
+	m_FrameLength = frameLength;
+	m_linkLayerType = layerType;
 
 	return true;
 }
@@ -332,9 +358,23 @@ DpdkDevice::DpdkDevice(int port, uint32_t mBufPoolSize)
 
 	setDeviceInfo();
 
+	memset(&m_PrevStats, 0 ,sizeof(m_PrevStats));
+
+	m_TxBuffers = NULL;
+	m_TxBufferLastDrainTsc = NULL;
+
 	m_DeviceOpened = false;
 	m_WasOpened = false;
 	m_StopThread = true;
+}
+
+DpdkDevice::~DpdkDevice()
+{
+	if (m_TxBuffers != NULL)
+		delete [] m_TxBuffers;
+
+	if (m_TxBufferLastDrainTsc != NULL)
+		delete [] m_TxBufferLastDrainTsc;
 }
 
 uint32_t DpdkDevice::getCurrentCoreId()
@@ -375,13 +415,13 @@ bool DpdkDevice::openMultiQueues(uint16_t numOfRxQueuesToOpen, uint16_t numOfTxQ
 		close();
 	}
 
+	m_Config = config;
+
 	if (!configurePort(numOfRxQueuesToOpen, numOfTxQueuesToOpen))
 	{
 		m_DeviceOpened = false;
 		return false;
 	}
-
-	m_Config = config;
 
 	clearCoreConfiguration();
 
@@ -436,12 +476,24 @@ bool DpdkDevice::configurePort(uint8_t numOfRxQueues, uint8_t numOfTxQueues)
 		return false;
 	}
 
+	// if PMD doesn't support RSS, set RSS HF to 0
+	if (getSupportedRssHashFunctions() == 0 && m_Config.rssHashFunction != 0)
+	{
+		LOG_DEBUG("PMD '%s' doesn't support RSS, setting RSS hash functions to 0", m_PMDName.c_str());
+		m_Config.rssHashFunction = 0;
+	}
+
+	if (!isDeviceSupportRssHashFunction(m_Config.rssHashFunction))
+	{
+		LOG_ERROR("PMD '%s' doesn't support the request RSS hash functions 0x%X", m_PMDName.c_str(), (uint32_t)m_Config.rssHashFunction);
+		return false;
+	}
 
 	// verify num of RX queues is power of 2
 	bool isRxQueuePowerOfTwo = !(numOfRxQueues == 0) && !(numOfRxQueues & (numOfRxQueues - 1));
 	if (!isRxQueuePowerOfTwo)
 	{
-		LOG_ERROR("Num of RX queues must be power of 2 (because of DPDK limitation). Attempetd to open device with %d RX queues", numOfRxQueues);
+		LOG_ERROR("Num of RX queues must be power of 2 (because of DPDK limitation). Attempted to open device with %d RX queues", numOfRxQueues);
 		return false;
 	}
 
@@ -454,8 +506,9 @@ bool DpdkDevice::configurePort(uint8_t numOfRxQueues, uint8_t numOfTxQueues)
 	portConf.rxmode.jumbo_frame = DPDK_COFIG_JUMBO_FRAME;
 	portConf.rxmode.hw_strip_crc = DPDK_COFIG_HW_STRIP_CRC;
 	portConf.rxmode.mq_mode = DPDK_CONFIG_MQ_MODE;
-	portConf.rx_adv_conf.rss_conf.rss_key= DpdkDevice::m_RSSKey;
-	portConf.rx_adv_conf.rss_conf.rss_hf = ETH_RSS_IPV4 | ETH_RSS_IPV6;
+	portConf.rx_adv_conf.rss_conf.rss_key = m_Config.rssKey;
+	portConf.rx_adv_conf.rss_conf.rss_key_len = m_Config.rssKeyLength;
+	portConf.rx_adv_conf.rss_conf.rss_hf = convertRssHfToDpdkRssHf(m_Config.rssHashFunction);
 
 	int res = rte_eth_dev_configure((uint8_t) m_Id, numOfRxQueues, numOfTxQueues, &portConf);
 	if (res < 0)
@@ -511,6 +564,39 @@ bool DpdkDevice::initQueues(uint8_t numOfRxQueuesToInit, uint8_t numOfTxQueuesTo
 			return false;
 		}
 	}
+
+	if (m_TxBuffers != NULL)
+		delete [] m_TxBuffers;
+
+	if (m_TxBufferLastDrainTsc != NULL)
+		delete [] m_TxBufferLastDrainTsc;
+
+	m_TxBuffers = new rte_eth_dev_tx_buffer*[numOfTxQueuesToInit];
+	m_TxBufferLastDrainTsc = new uint64_t[numOfTxQueuesToInit];
+	memset(m_TxBufferLastDrainTsc, 0, sizeof(uint64_t)*numOfTxQueuesToInit);
+
+	for (uint8_t i = 0; i < numOfTxQueuesToInit; i++)
+	{
+		m_TxBuffers[i] = (rte_eth_dev_tx_buffer*)rte_zmalloc_socket("tx_buffer", RTE_ETH_TX_BUFFER_SIZE(MAX_BURST_SIZE), 0, rte_eth_dev_socket_id(m_Id));
+
+		if (m_TxBuffers[i] == NULL)
+		{
+			LOG_ERROR("Failed to allocate TX buffer for port %d TX queue %d", m_Id, (int)i);
+			return false;
+		}
+
+		int res = rte_eth_tx_buffer_init(m_TxBuffers[i], MAX_BURST_SIZE);
+
+		if (res != 0)
+		{
+			LOG_ERROR("Failed to init TX buffer for port %d TX queue %d", m_Id, (int)i);
+			return false;
+		}
+	}
+
+	m_TxBufferDrainTsc = (rte_get_tsc_hz() + US_PER_S - 1) / US_PER_S * m_Config.flushTxBufferTimeout;
+
+	memset(m_TxBufferLastDrainTsc, 0, sizeof(uint64_t)*numOfTxQueuesToInit);
 
 	LOG_DEBUG("Successfully initialized %d TX queues for device [%s]", numOfTxQueuesToInit, m_DeviceName);
 
@@ -840,7 +926,7 @@ int DpdkDevice::dpdkCaptureThreadMain(void *ptr)
 
 	while (likely(!pThis->m_StopThread))
 	{
-		uint32_t numOfPktsReceived = rte_eth_rx_burst(pThis->m_Id, queueId, pThis->m_mBufArray, RX_BURST_SIZE);
+		uint32_t numOfPktsReceived = rte_eth_rx_burst(pThis->m_Id, queueId, pThis->m_mBufArray, MAX_BURST_SIZE);
 
 		if (unlikely(numOfPktsReceived == 0))
 			continue;
@@ -868,12 +954,68 @@ int DpdkDevice::dpdkCaptureThreadMain(void *ptr)
 
 void DpdkDevice::getStatistics(pcap_stat& stats)
 {
+	LOG_ERROR("This method is deprecated. Please use DpdkDevice::getStatistics(DpdkDeviceStats& stats)");
+//	struct rte_eth_stats rteStats;
+//	rte_eth_stats_get(m_Id, &rteStats);
+//	stats.ps_recv = rteStats.ipackets;
+//	stats.ps_drop = rteStats.ierrors + rteStats.rx_nombuf;
+//	stats.ps_ifdrop = rteStats.rx_nombuf;
+}
+
+#define nanosec_gap(begin, end) ((end.tv_sec - begin.tv_sec) * 1000000000.0 + (end.tv_nsec - begin.tv_nsec))
+
+void DpdkDevice::getStatistics(DpdkDeviceStats& stats)
+{
+	timespec timestamp;
+	clock_gettime(CLOCK_MONOTONIC, &timestamp);
 	struct rte_eth_stats rteStats;
 	rte_eth_stats_get(m_Id, &rteStats);
-	stats.ps_recv = rteStats.ipackets;
-	stats.ps_drop = rteStats.ierrors + rteStats.rx_nombuf;
-	stats.ps_ifdrop = rteStats.rx_nombuf;
+
+	double secsElapsed = (double)nanosec_gap(m_PrevStats.timestamp, timestamp) / 1000000000.0;
+
+	stats.devId = m_Id;
+	stats.timestamp = timestamp;
+	stats.rxErroneousPackets = rteStats.ierrors;
+	stats.rxMbufAlocFailed = rteStats.rx_nombuf;
+	stats.rxPacketsDropeedByHW = rteStats.imissed;
+	stats.aggregatedRxStats.packets = rteStats.ipackets;
+	stats.aggregatedRxStats.bytes = rteStats.ibytes;
+	stats.aggregatedRxStats.packetsPerSec = (stats.aggregatedRxStats.packets - m_PrevStats.aggregatedRxStats.packets) / secsElapsed;
+	stats.aggregatedRxStats.bytesPerSec = (stats.aggregatedRxStats.bytes - m_PrevStats.aggregatedRxStats.bytes) / secsElapsed;
+	stats.aggregatedTxStats.packets = rteStats.opackets;
+	stats.aggregatedTxStats.bytes = rteStats.obytes;
+	stats.aggregatedTxStats.packetsPerSec = (stats.aggregatedTxStats.packets - m_PrevStats.aggregatedTxStats.packets) / secsElapsed;
+	stats.aggregatedTxStats.bytesPerSec = (stats.aggregatedTxStats.bytes - m_PrevStats.aggregatedTxStats.bytes) / secsElapsed;
+
+	int numRxQs = std::min<int>(DPDK_MAX_RX_QUEUES, RTE_ETHDEV_QUEUE_STAT_CNTRS);
+	int numTxQs = std::min<int>(DPDK_MAX_TX_QUEUES, RTE_ETHDEV_QUEUE_STAT_CNTRS);
+
+	for (int i = 0; i < numRxQs; i++)
+	{
+		stats.rxStats[i].packets = rteStats.q_ipackets[i];
+		stats.rxStats[i].bytes = rteStats.q_ibytes[i];
+		stats.rxStats[i].packetsPerSec = (stats.rxStats[i].packets - m_PrevStats.rxStats[i].packets) / secsElapsed;
+		stats.rxStats[i].bytesPerSec = (stats.rxStats[i].bytes - m_PrevStats.rxStats[i].bytes) / secsElapsed;
+	}
+
+	for (int i = 0; i < numTxQs; i++)
+	{
+		stats.txStats[i].packets = rteStats.q_opackets[i];
+		stats.txStats[i].bytes = rteStats.q_obytes[i];
+		stats.txStats[i].packetsPerSec = (stats.txStats[i].packets - m_PrevStats.txStats[i].packets) / secsElapsed;
+		stats.txStats[i].bytesPerSec = (stats.txStats[i].bytes - m_PrevStats.txStats[i].bytes) / secsElapsed;
+	}
+
+	//m_PrevStats = stats;
+	memcpy(&m_PrevStats, &stats, sizeof(m_PrevStats));
 }
+
+void DpdkDevice::clearStatistics()
+{
+	rte_eth_stats_reset(m_Id);
+	memset(&m_PrevStats, 0 ,sizeof(m_PrevStats));
+}
+
 
 bool DpdkDevice::setFilter(GeneralFilter& filter)
 {
@@ -889,173 +1031,35 @@ bool DpdkDevice::setFilter(std::string filterAsString)
 	return false;
 }
 
-int sendPacketsInternal(rte_mbuf** mBufArr, int mBufArrLen, int devId, uint16_t txQueueId)
-{
-	// try to send packets currently in mBufArr
-	LOG_DEBUG("Ready to send %d packets", mBufArrLen);
-	int packetsSent = rte_eth_tx_burst(devId, txQueueId,
-			mBufArr,
-			mBufArrLen);
-	LOG_DEBUG("rte_eth_tx_burst sent %d out of %d", packetsSent, mBufArrLen);
-
-	// free all mBufs we allocated
-	for (int i = 0; i < mBufArrLen; i++)
-	{
-		rte_pktmbuf_free(mBufArr[i]);
-	}
-
-	return packetsSent;
-}
-
-int DpdkDevice::sendPacketsInner(uint16_t txQueueId, void* packetStorage, packetIterator iter, int arrLength)
-{
-	if (!m_DeviceOpened)
-	{
-		LOG_ERROR("Device '%s' not opened!", m_DeviceName);
-		return 0;
-	}
-
-	if (txQueueId < 0)
-	{
-		LOG_ERROR("txQueueId must be >= 0");
-		return 0;
-	}
-
-	if (txQueueId >= m_NumOfTxQueuesOpened)
-	{
-		LOG_ERROR("TX queue %d isn't opened in device", txQueueId);
-		return 0;
-	}
-
-	int totalPacketsToSend = arrLength;
-	int packetIndex = 0;
-
-	#define PACKET_TRANSMITION_THRESHOLD 0.8
-	#define PACKET_TX_TRIES 1.5
-
-	int mBufArraySize = (int)(m_Config.transmitDescriptorsNumber*PACKET_TRANSMITION_THRESHOLD);
-	rte_mbuf* mBufArr[mBufArraySize];
-	int packetsToSendInThisIteration = 0;
-	int numOfSendFailures = 0;
-
-	while (packetIndex < totalPacketsToSend && numOfSendFailures < 3)
-	{
-		RawPacket* rawPacket = iter(packetStorage, packetIndex);
-
-		if (rawPacket->getRawDataLen() == 0)
-		{
-			LOG_ERROR("Cannot send a packet with size of 0");
-			packetIndex++;
-			continue;
-		}
-
-		rte_mbuf* newMBuf = rte_pktmbuf_alloc(m_MBufMempool);
-
-		// couldn't allocate mbuf, probably out of mbuf resources
-		if (newMBuf == NULL)
-		{
-			// count the num of times mbuf allocation failed
-			numOfSendFailures++;
-			LOG_DEBUG("Couldn't allocate mBuf for transmitting, number of failures: %d", numOfSendFailures);
-
-			// try to free mbufs by sending the packets currently waiting to be sent
-			if (packetsToSendInThisIteration > 0)
-			{
-				int packetsSentInThisIteration = sendPacketsInternal(mBufArr, packetsToSendInThisIteration, m_Id, txQueueId);
-				packetsToSendInThisIteration = 0; // start a new iteration
-
-				if (packetsSentInThisIteration < packetsToSendInThisIteration)
-				{
-					LOG_DEBUG("Since NIC couldn't send all packet in this iteration, waiting for 0.2 second for H/W descriptors to get free");
-					usleep(200000);
-				}
-			}
-
-			// mbuf allocation failed, go to loop start
-			continue;
-		}
-
-		// else - rte_pktmbuf_alloc succeeded
-
-		// mbuf is allocated with length of 0, need to adjust it to the size of the raw packet
-		if (rte_pktmbuf_append(newMBuf, rawPacket->getRawDataLen()) == NULL)
-		{
-			LOG_ERROR("Couldn't set new allocated mBuf size to %d bytes", rawPacket->getRawDataLen());
-			packetIndex++;
-			continue;
-		}
-
-		if (rawPacket->getRawDataLen() > (int)rte_pktmbuf_pkt_len(newMBuf))
-		{
-			LOG_ERROR("Trying to send data with length larger than mBuf size. Requested length: %d; mBuf size: %d. Skipping RawPacket", rawPacket->getRawDataLen(), rte_pktmbuf_pkt_len(newMBuf));
-			packetIndex++;
-			continue;
-		}
-
-
-		uint8_t* mBufData = (uint8_t*)rte_pktmbuf_mtod(newMBuf, uint8_t*);
-		if (memcpy(mBufData, rawPacket->getRawData(), rawPacket->getRawDataLen()) == NULL)
-		{
-			LOG_ERROR("Failed to copy RawPacket data to mBuf. Skipping RawPacket");
-			packetIndex++;
-			continue;
-		}
-
-		newMBuf->data_len = rawPacket->getRawDataLen();
-
-		mBufArr[packetsToSendInThisIteration] = newMBuf;
-		packetIndex++;
-		packetsToSendInThisIteration++;
-		numOfSendFailures = 0;
-
-		// if number of aggregated packets is beyond tx threshold or reached to the end of packet list, send the packets
-		// currently in mBufArr
-		if (packetsToSendInThisIteration >= (m_Config.transmitDescriptorsNumber*PACKET_TRANSMITION_THRESHOLD) || packetIndex == totalPacketsToSend)
-		{
-			int packetsSentInThisIteration = sendPacketsInternal(mBufArr, packetsToSendInThisIteration, m_Id, txQueueId);
-			packetsToSendInThisIteration = 0; // start a new iteration
-
-			if (packetsSentInThisIteration < packetsToSendInThisIteration)
-			{
-				LOG_DEBUG("Since NIC couldn't send all packet in this iteration, waiting for 0.2 second for H/W descriptors to get free");
-				usleep(200000);
-			}
-		}
-	}
-
-	LOG_DEBUG("All %d packets were sent successfully", packetIndex);
-	return packetIndex;
-}
-
-bool DpdkDevice::receivePackets(RawPacketVector& rawPacketsArr, uint16_t rxQueueId)
+uint16_t DpdkDevice::receivePackets(MBufRawPacketVector& rawPacketsArr, uint16_t rxQueueId)
 {
 	if (!m_DeviceOpened)
 	{
 		LOG_ERROR("Device not opened");
-		return false;
+		return 0;
 	}
 
 	if (!m_StopThread)
 	{
 		LOG_ERROR("DpdkDevice capture mode is currently running. Cannot recieve packets in parallel");
-		return false;
+		return 0;
 	}
 
 	if (rxQueueId >= m_TotalAvailableRxQueues)
 	{
 		LOG_ERROR("RX queue ID #%d not available for this device", rxQueueId);
-		return false;
+		return 0;
 	}
 
-	struct rte_mbuf* mBufArray[RX_BURST_SIZE];
-	uint32_t numOfPktsReceived  = rte_eth_rx_burst(m_Id, rxQueueId, mBufArray, RX_BURST_SIZE);
+	struct rte_mbuf* mBufArray[MAX_BURST_SIZE];
+	uint32_t numOfPktsReceived  = rte_eth_rx_burst(m_Id, rxQueueId, mBufArray, MAX_BURST_SIZE);
 
 	//the following line trashes the log with many messages. Uncomment only if necessary
 	//LOG_DEBUG("Captured %d packets", numOfPktsReceived);
 
 	if (unlikely(numOfPktsReceived <= 0))
 	{
-		return true;
+		return 0;
 	}
 
 	timeval time;
@@ -1069,156 +1073,308 @@ bool DpdkDevice::receivePackets(RawPacketVector& rawPacketsArr, uint16_t rxQueue
 		rawPacketsArr.pushBack(newRawPacket);
 	}
 
-	return true;
+	return numOfPktsReceived;
 }
 
-bool DpdkDevice::receivePackets(MBufRawPacket** rawPacketsArr, int& rawPacketArrLength, uint16_t rxQueueId)
+uint16_t DpdkDevice::receivePackets(MBufRawPacket** rawPacketsArr, uint16_t rawPacketArrLength, uint16_t rxQueueId)
 {
-	if (!m_DeviceOpened)
+	if (unlikely(!m_DeviceOpened))
 	{
 		LOG_ERROR("Device not opened");
-		return false;
+		return 0;
 	}
 
-	if (!m_StopThread)
+	if (unlikely(!m_StopThread))
 	{
-		LOG_ERROR("DpdkDevice capture mode is currently running. Cannot recieve packets in parallel");
-		return false;
+		LOG_ERROR("DpdkDevice capture mode is currently running. Cannot receive packets in parallel");
+		return 0;
 	}
 
-	if (rxQueueId >= m_TotalAvailableRxQueues)
+	if (unlikely(rxQueueId >= m_TotalAvailableRxQueues))
 	{
 		LOG_ERROR("RX queue ID #%d not available for this device", rxQueueId);
-		return false;
+		return 0;
 	}
 
-	struct rte_mbuf* mBufArray[RX_BURST_SIZE];
-	rawPacketArrLength = rte_eth_rx_burst(m_Id, rxQueueId, mBufArray, RX_BURST_SIZE);
-	LOG_DEBUG("Captured %d packets", rawPacketArrLength);
-
-	if (unlikely(rawPacketArrLength <= 0))
+	if (unlikely(rawPacketsArr == NULL))
 	{
-		rawPacketArrLength = 0;
-		rawPacketsArr = NULL;
-		return true;
+		LOG_ERROR("Provided address of array to store packets is NULL");
+		return 0;
+	}
+
+	struct rte_mbuf* mBufArray[rawPacketArrLength];
+	uint16_t packetsReceived = rte_eth_rx_burst(m_Id, rxQueueId, mBufArray, rawPacketArrLength);
+	//LOG_DEBUG("Captured %d packets", rawPacketArrLength);
+
+	if (unlikely(packetsReceived <= 0))
+	{
+		return 0;
 	}
 
 	timeval time;
 	gettimeofday(&time, NULL);
 
-	MBufRawPacket* mBufArr = new MBufRawPacket[rawPacketArrLength];
-	for (int index = 0; index < rawPacketArrLength; ++index)
+	for (size_t index = 0; index < packetsReceived; ++index)
 	{
 		struct rte_mbuf* mBuf = mBufArray[index];
-		mBufArr[index].setMBuf(mBuf, time);
+		if (rawPacketsArr[index] == NULL)
+			rawPacketsArr[index] = new MBufRawPacket();
+
+		rawPacketsArr[index]->setMBuf(mBuf, time);
 	}
 
-	*rawPacketsArr = mBufArr;
-	return true;
+	return packetsReceived;
 }
 
-bool DpdkDevice::receivePackets(Packet** packetsArr, int& packetsArrLength, uint16_t rxQueueId)
+uint16_t DpdkDevice::receivePackets(Packet** packetsArr, uint16_t packetsArrLength, uint16_t rxQueueId)
 {
-	if (!m_DeviceOpened)
+	if (unlikely(!m_DeviceOpened))
 	{
 		LOG_ERROR("Device not opened");
-		return false;
+		return 0;
 	}
 
-	if (!m_StopThread)
+	if (unlikely(!m_StopThread))
 	{
 		LOG_ERROR("DpdkDevice capture mode is currently running. Cannot recieve packets in parallel");
-		return false;
+		return 0;
 	}
 
-	if (rxQueueId >= m_TotalAvailableRxQueues)
+	if (unlikely(rxQueueId >= m_TotalAvailableRxQueues))
 	{
 		LOG_ERROR("RX queue ID #%d not available for this device", rxQueueId);
-		return false;
+		return 0;
 	}
 
-	struct rte_mbuf* mBufArray[RX_BURST_SIZE];
-	packetsArrLength = rte_eth_rx_burst(m_Id, rxQueueId, mBufArray, RX_BURST_SIZE);
-	LOG_DEBUG("Captured %d packets", packetsArrLength);
+	struct rte_mbuf* mBufArray[packetsArrLength];
+	uint16_t packetsReceived = rte_eth_rx_burst(m_Id, rxQueueId, mBufArray, packetsArrLength);
+	//LOG_DEBUG("Captured %d packets", packetsArrLength);
 
-	if (unlikely(packetsArrLength <= 0))
+	if (unlikely(packetsReceived <= 0))
 	{
-		packetsArrLength = 0;
-		packetsArr = NULL;
-		return true;
+		return 0;
 	}
 
 	timeval time;
 	gettimeofday(&time, NULL);
 
-    *packetsArr = new Packet[packetsArrLength];
-	for (int index = 0; index < packetsArrLength; ++index)
+	for (size_t index = 0; index < packetsReceived; ++index)
 	{
 		struct rte_mbuf* mBuf = mBufArray[index];
 		MBufRawPacket* newRawPacket = new MBufRawPacket();
 		newRawPacket->setMBuf(mBuf, time);
-		((*packetsArr)[index]).setRawPacket(newRawPacket, true);
+		if (packetsArr[index] == NULL)
+			packetsArr[index] = new Packet();
+
+		packetsArr[index]->setRawPacket(newRawPacket, true);
 	}
 
-	return true;
+	return packetsReceived;
 }
 
-RawPacket* getNextPacketFromRawPacketArray(void* packetStorage, int index)
+uint16_t DpdkDevice::flushTxBuffer(bool flushOnlyIfTimeoutExpired, uint16_t txQueueId)
 {
-	RawPacket* packetsArr = (RawPacket*)packetStorage;
-	return &packetsArr[index];
-}
+	bool flush = true;
 
-RawPacket* getNextPacketFromPacketArray(void* packetStorage, int index)
-{
-	Packet** packetsArr = (Packet**)packetStorage;
-	return packetsArr[index]->getRawPacket();
-}
-
-RawPacket* getNextPacketFromRawPacketVec(void* packetStorage, int index)
-{
-	RawPacketVector* packetVec = (RawPacketVector*)packetStorage;
-	return packetVec->at(index);
-}
-
-int DpdkDevice::sendPackets(const RawPacket* rawPacketsArr, int arrLength, uint16_t txQueueId)
-{
-	return sendPacketsInner(txQueueId, (void*)rawPacketsArr, getNextPacketFromRawPacketArray, arrLength);
-}
-
-int DpdkDevice::sendPackets(const Packet** packetsArr, int arrLength, uint16_t txQueueId)
-{
-	return sendPacketsInner(txQueueId, (void*)packetsArr, getNextPacketFromPacketArray, arrLength);
-}
-
-int DpdkDevice::sendPackets(const RawPacketVector& rawPacketsVec, uint16_t txQueueId)
-{
-	return sendPacketsInner(txQueueId, (void*)(&rawPacketsVec), getNextPacketFromRawPacketVec, rawPacketsVec.size());
-}
-
-bool DpdkDevice::sendPacket(const uint8_t* packetData, int packetDataLength, uint16_t txQueueId)
-{
-	if (packetDataLength == 0)
+	if (flushOnlyIfTimeoutExpired)
 	{
-		LOG_ERROR("Trying to send a packet with length 0");
-		return false;
+		uint64_t curTsc = rte_rdtsc();
+
+		if (curTsc - m_TxBufferLastDrainTsc[txQueueId] > m_TxBufferDrainTsc)
+			m_TxBufferLastDrainTsc[txQueueId] = curTsc;
+		else
+			flush = false;
 	}
 
-	timeval timestamp;
-	RawPacket tempRawPacket(packetData, packetDataLength, timestamp, false);
-	return (sendPackets(&tempRawPacket, 1, txQueueId) == 1);
+	if (flush)
+		return rte_eth_tx_buffer_flush(m_Id, txQueueId, m_TxBuffers[txQueueId]);
+
+	return 0;
+}
+
+static rte_mbuf* getNextPacketFromMBufRawPacketArray(void* packetStorage, int index)
+{
+	MBufRawPacket** packetsArr = (MBufRawPacket**)packetStorage;
+	return packetsArr[index]->getMBuf();
+}
+
+static rte_mbuf* getNextPacketFromMBufArray(void* packetStorage, int index)
+{
+	rte_mbuf** mbufArr = (rte_mbuf**)packetStorage;
+	return mbufArr[index];
+}
+
+static rte_mbuf* getNextPacketFromMBufRawPacketVec(void* packetStorage, int index)
+{
+	MBufRawPacketVector* packetVec = (MBufRawPacketVector*)packetStorage;
+	return packetVec->at(index)->getMBuf();
+}
+
+static rte_mbuf* getNextPacketFromMBufRawPacket(void* packetStorage, int index)
+{
+	MBufRawPacket* mbufRawPacket = (MBufRawPacket*)packetStorage;
+	return mbufRawPacket->getMBuf();
+}
+
+uint16_t DpdkDevice::sendPacketsInner(uint16_t txQueueId, void* packetStorage, packetIterator iter, int arrLength, bool useTxBuffer)
+{
+	if (unlikely(!m_DeviceOpened))
+	{
+		LOG_ERROR("Device '%s' not opened!", m_DeviceName);
+		return 0;
+	}
+
+	if (unlikely(txQueueId >= m_NumOfTxQueuesOpened))
+	{
+		LOG_ERROR("TX queue %d isn't opened in device", txQueueId);
+		return 0;
+	}
+
+	rte_mbuf* mBufArr[MAX_BURST_SIZE];
+
+	int packetIndex = 0;
+	int mBufArrIndex = 0;
+	uint16_t packetsSent = 0;
+	int lastSleep = 0;
+
+	#define PACKET_TRANSMITION_THRESHOLD 0.8
+	int packetTxThreshold = m_Config.transmitDescriptorsNumber*PACKET_TRANSMITION_THRESHOLD;
+
+	while (packetIndex < arrLength)
+	{
+		rte_mbuf* mBuf = iter(packetStorage, packetIndex);
+
+		if (useTxBuffer)
+		{
+			packetsSent += rte_eth_tx_buffer(m_Id, txQueueId, m_TxBuffers[txQueueId], mBuf);
+		}
+		else
+		{
+			mBufArr[mBufArrIndex++] = mBuf;
+
+			if (unlikely(mBufArrIndex == MAX_BURST_SIZE))
+			{
+				packetsSent += rte_eth_tx_burst(m_Id, txQueueId, mBufArr, MAX_BURST_SIZE);
+				mBufArrIndex = 0;
+
+				if (unlikely((packetsSent - lastSleep) >= packetTxThreshold))
+				{
+					LOG_DEBUG("Since NIC couldn't send all packet in this iteration, waiting for 0.2 second for H/W descriptors to get free");
+					usleep(200000);
+					lastSleep = packetsSent;
+				}
+			}
+		}
+
+		packetIndex++;
+	}
+
+	if (useTxBuffer)
+	{
+		packetsSent += flushTxBuffer(true, txQueueId);
+	}
+	else if (mBufArrIndex > 0)
+	{
+		packetsSent += rte_eth_tx_burst(m_Id, txQueueId, mBufArr, mBufArrIndex);
+	}
+
+	return packetsSent;
 }
 
 
-bool DpdkDevice::sendPacket(const RawPacket& rawPacket, uint16_t txQueueId)
+uint16_t DpdkDevice::sendPackets(MBufRawPacket** rawPacketsArr, uint16_t arrLength, uint16_t txQueueId, bool useTxBuffer)
 {
-	return (sendPackets(&rawPacket, 1, txQueueId) == 1);
+	return sendPacketsInner(txQueueId, (void*)rawPacketsArr, getNextPacketFromMBufRawPacketArray, arrLength, useTxBuffer);
 }
 
-bool DpdkDevice::sendPacket(const Packet& packet, uint16_t txQueueId)
+uint16_t DpdkDevice::sendPackets(Packet** packetsArr, uint16_t arrLength, uint16_t txQueueId, bool useTxBuffer)
 {
-	const Packet* tempArr[1] = { &packet };
-	return (sendPackets(tempArr, 1, txQueueId) == 1);
+	rte_mbuf* mBufArr[arrLength];
+	MBufRawPacketVector mBufVec;
+
+	for (size_t i = 0; i < arrLength; i++)
+	{
+		MBufRawPacket* rawPacket = NULL;
+
+		if (packetsArr[i]->getRawPacketReadOnly()->getObjectType() != MBUFRAWPACKET_OBJECT_TYPE)
+		{
+			rawPacket = new MBufRawPacket();
+			if (unlikely(!rawPacket->initFromRawPacket(packetsArr[i]->getRawPacketReadOnly(), this)))
+			{
+				delete rawPacket;
+				return 0;
+			}
+
+			mBufVec.pushBack(rawPacket);
+		}
+		else
+		{
+			rawPacket = (MBufRawPacket*)packetsArr[i]->getRawPacketReadOnly();
+		}
+
+		mBufArr[i] = rawPacket->getMBuf();
+	}
+
+	return sendPacketsInner(txQueueId, (void*)mBufArr, getNextPacketFromMBufArray, arrLength, useTxBuffer);
+}
+
+uint16_t DpdkDevice::sendPackets(const RawPacketVector& rawPacketsVec, uint16_t txQueueId, bool useTxBuffer)
+{
+	rte_mbuf* mBufArr[rawPacketsVec.size()];
+	MBufRawPacketVector mBufVec;
+	int mBufIndex = 0;
+
+	for (RawPacketVector::ConstVectorIterator iter = rawPacketsVec.begin(); iter != rawPacketsVec.end(); iter++)
+	{
+		MBufRawPacket* rawPacket = NULL;
+
+		if ((*iter)->getObjectType() != MBUFRAWPACKET_OBJECT_TYPE)
+		{
+			rawPacket = new MBufRawPacket();
+			if (unlikely(!rawPacket->initFromRawPacket(*iter, this)))
+			{
+				delete rawPacket;
+				return 0;
+			}
+
+			mBufVec.pushBack(rawPacket);
+		}
+		else
+		{
+			rawPacket = (MBufRawPacket*)(*iter);
+		}
+
+		mBufArr[mBufIndex++] = rawPacket->getMBuf();
+	}
+
+	return sendPacketsInner(txQueueId, (void*)mBufArr, getNextPacketFromMBufArray, rawPacketsVec.size(), useTxBuffer);
+}
+
+uint16_t DpdkDevice::sendPackets(const MBufRawPacketVector& rawPacketsVec, uint16_t txQueueId, bool useTxBuffer)
+{
+	return sendPacketsInner(txQueueId, (void*)(&rawPacketsVec), getNextPacketFromMBufRawPacketVec, rawPacketsVec.size(), useTxBuffer);
+}
+
+bool DpdkDevice::sendPacket(const RawPacket& rawPacket, uint16_t txQueueId, bool useTxBuffer)
+{
+	if (rawPacket.getObjectType() == MBUFRAWPACKET_OBJECT_TYPE)
+		return (sendPacketsInner(txQueueId, (MBufRawPacket*)&rawPacket, getNextPacketFromMBufRawPacket, 1, useTxBuffer) == 1);
+
+	MBufRawPacket mbufRawPacket;
+	if (unlikely(!mbufRawPacket.initFromRawPacket(&rawPacket, this)))
+		return false;
+
+	return (sendPacketsInner(txQueueId, &mbufRawPacket, getNextPacketFromMBufRawPacket, 1, useTxBuffer) == 1);
+}
+
+bool DpdkDevice::sendPacket(const MBufRawPacket& rawPacket, uint16_t txQueueId, bool useTxBuffer)
+{
+	return (sendPacketsInner(txQueueId, (MBufRawPacket*)&rawPacket, getNextPacketFromMBufRawPacket, 1, useTxBuffer) == 1);
+}
+
+bool DpdkDevice::sendPacket(const Packet& packet, uint16_t txQueueId, bool useTxBuffer)
+{
+	return sendPacket(*(packet.getRawPacketReadOnly()), txQueueId);
 }
 
 int DpdkDevice::getAmountOfFreeMbufs()
@@ -1230,6 +1386,171 @@ int DpdkDevice::getAmountOfMbufsInUse()
 {
 	return (int)rte_mempool_in_use_count(m_MBufMempool);
 }
+
+uint64_t DpdkDevice::convertRssHfToDpdkRssHf(uint64_t rssHF)
+{
+	if (rssHF == (uint64_t)-1)
+	{
+		rte_eth_dev_info devInfo;
+		rte_eth_dev_info_get(m_Id, &devInfo);
+		return devInfo.flow_type_rss_offloads;
+	}
+
+	uint64_t dpdkRssHF = 0;
+
+	if ((rssHF & RSS_IPV4) != 0)
+		dpdkRssHF |= ETH_RSS_IPV4;
+
+	if ((rssHF & RSS_FRAG_IPV4) != 0)
+		dpdkRssHF |= ETH_RSS_IPV4;
+
+	if ((rssHF & RSS_NONFRAG_IPV4_TCP) != 0)
+		dpdkRssHF |= ETH_RSS_NONFRAG_IPV4_TCP;
+
+	if ((rssHF & RSS_NONFRAG_IPV4_UDP) != 0)
+		dpdkRssHF |= ETH_RSS_NONFRAG_IPV4_UDP;
+
+	if ((rssHF & RSS_NONFRAG_IPV4_SCTP) != 0)
+		dpdkRssHF |= ETH_RSS_NONFRAG_IPV4_SCTP;
+
+	if ((rssHF & RSS_NONFRAG_IPV4_OTHER) != 0)
+		dpdkRssHF |= ETH_RSS_NONFRAG_IPV4_OTHER;
+
+	if ((rssHF & RSS_IPV6) != 0)
+		dpdkRssHF |= ETH_RSS_IPV6;
+
+	if ((rssHF & RSS_FRAG_IPV6) != 0)
+		dpdkRssHF |= ETH_RSS_FRAG_IPV6;
+
+	if ((rssHF & RSS_NONFRAG_IPV6_TCP) != 0)
+		dpdkRssHF |= ETH_RSS_NONFRAG_IPV6_TCP;
+
+	if ((rssHF & RSS_NONFRAG_IPV6_UDP) != 0)
+		dpdkRssHF |= ETH_RSS_NONFRAG_IPV6_UDP;
+
+	if ((rssHF & RSS_NONFRAG_IPV6_SCTP) != 0)
+		dpdkRssHF |= ETH_RSS_NONFRAG_IPV6_SCTP;
+
+	if ((rssHF & RSS_NONFRAG_IPV6_OTHER) != 0)
+		dpdkRssHF |= ETH_RSS_NONFRAG_IPV6_OTHER;
+
+	if ((rssHF & RSS_L2_PAYLOAD) != 0)
+		dpdkRssHF |= ETH_RSS_L2_PAYLOAD;
+
+	if ((rssHF & RSS_IPV6_EX) != 0)
+		dpdkRssHF |= ETH_RSS_IPV6_EX;
+
+	if ((rssHF & RSS_IPV6_TCP_EX) != 0)
+		dpdkRssHF |= ETH_RSS_IPV6_TCP_EX;
+
+	if ((rssHF & RSS_IPV6_UDP_EX) != 0)
+		dpdkRssHF |= ETH_RSS_IPV6_UDP_EX;
+
+	if ((rssHF & RSS_PORT) != 0)
+		dpdkRssHF |= ETH_RSS_PORT;
+
+	if ((rssHF & RSS_VXLAN) != 0)
+		dpdkRssHF |= ETH_RSS_VXLAN;
+
+	if ((rssHF & RSS_GENEVE) != 0)
+		dpdkRssHF |= ETH_RSS_GENEVE;
+
+	if ((rssHF & RSS_NVGRE) != 0)
+		dpdkRssHF |= ETH_RSS_NVGRE;
+
+	return dpdkRssHF;
+}
+
+uint64_t DpdkDevice::convertDpdkRssHfToRssHf(uint64_t dpdkRssHF)
+{
+	uint64_t rssHF = 0;
+
+	if ((dpdkRssHF & ETH_RSS_IPV4) != 0)
+		rssHF |= RSS_IPV4;
+
+	if ((dpdkRssHF & ETH_RSS_FRAG_IPV4) != 0)
+		rssHF |= RSS_IPV4;
+
+	if ((dpdkRssHF & ETH_RSS_NONFRAG_IPV4_TCP) != 0)
+		rssHF |= RSS_NONFRAG_IPV4_TCP;
+
+	if ((dpdkRssHF & ETH_RSS_NONFRAG_IPV4_UDP) != 0)
+		rssHF |= RSS_NONFRAG_IPV4_UDP;
+
+	if ((dpdkRssHF & ETH_RSS_NONFRAG_IPV4_SCTP) != 0)
+		rssHF |= RSS_NONFRAG_IPV4_SCTP;
+
+	if ((dpdkRssHF & ETH_RSS_NONFRAG_IPV4_OTHER) != 0)
+		rssHF |= RSS_NONFRAG_IPV4_OTHER;
+
+	if ((dpdkRssHF & ETH_RSS_IPV6) != 0)
+		rssHF |= RSS_IPV6;
+
+	if ((dpdkRssHF & ETH_RSS_FRAG_IPV6) != 0)
+		rssHF |= RSS_FRAG_IPV6;
+
+	if ((dpdkRssHF & ETH_RSS_NONFRAG_IPV6_TCP) != 0)
+		rssHF |= RSS_NONFRAG_IPV6_TCP;
+
+	if ((dpdkRssHF & ETH_RSS_NONFRAG_IPV6_UDP) != 0)
+		rssHF |= RSS_NONFRAG_IPV6_UDP;
+
+	if ((dpdkRssHF & ETH_RSS_NONFRAG_IPV6_SCTP) != 0)
+		rssHF |= RSS_NONFRAG_IPV6_SCTP;
+
+	if ((dpdkRssHF & ETH_RSS_NONFRAG_IPV6_OTHER) != 0)
+		rssHF |= RSS_NONFRAG_IPV6_OTHER;
+
+	if ((dpdkRssHF & ETH_RSS_L2_PAYLOAD) != 0)
+		rssHF |= RSS_L2_PAYLOAD;
+
+	if ((dpdkRssHF & ETH_RSS_IPV6_EX) != 0)
+		rssHF |= RSS_IPV6_EX;
+
+	if ((dpdkRssHF & ETH_RSS_IPV6_TCP_EX) != 0)
+		rssHF |= RSS_IPV6_TCP_EX;
+
+	if ((dpdkRssHF & ETH_RSS_IPV6_UDP_EX) != 0)
+		rssHF |= RSS_IPV6_UDP_EX;
+
+	if ((dpdkRssHF & ETH_RSS_PORT) != 0)
+		rssHF |= RSS_PORT;
+
+	if ((dpdkRssHF & ETH_RSS_VXLAN) != 0)
+		rssHF |= RSS_VXLAN;
+
+	if ((dpdkRssHF & ETH_RSS_GENEVE) != 0)
+		rssHF |= RSS_GENEVE;
+
+	if ((dpdkRssHF & ETH_RSS_NVGRE) != 0)
+		rssHF |= RSS_NVGRE;
+
+	return rssHF;
+}
+
+bool DpdkDevice::isDeviceSupportRssHashFunction(DpdkRssHashFunction rssHF)
+{
+	return isDeviceSupportRssHashFunction((uint64_t)rssHF);
+}
+
+bool DpdkDevice::isDeviceSupportRssHashFunction(uint64_t rssHFMask)
+{
+	uint64_t dpdkRssHF = convertRssHfToDpdkRssHf(rssHFMask);
+
+	rte_eth_dev_info devInfo;
+	rte_eth_dev_info_get(m_Id, &devInfo);
+
+	return ((devInfo.flow_type_rss_offloads & dpdkRssHF) == dpdkRssHF);
+}
+
+uint64_t DpdkDevice::getSupportedRssHashFunctions()
+{
+	rte_eth_dev_info devInfo;
+	rte_eth_dev_info_get(m_Id, &devInfo);
+
+	return convertDpdkRssHfToRssHf(devInfo.flow_type_rss_offloads);
+}
+
 
 } // namespace pcpp
 

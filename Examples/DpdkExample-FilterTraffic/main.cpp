@@ -28,6 +28,7 @@
 #include "UdpLayer.h"
 #include "SystemUtils.h"
 #include "PcapPlusPlusVersion.h"
+#include "TablePrinter.h"
 
 #include <vector>
 #include <iostream>
@@ -226,6 +227,12 @@ void onApplicationInterrupted(void* cookie)
 	// stop worker threads
 	DpdkDeviceList::getInstance().stopDpdkWorkerThreads();
 
+	// create table printer
+	std::vector<std::string> columnNames;
+	std::vector<int> columnWidths;
+	PacketStats::getStatsColumns(columnNames, columnWidths);
+	TablePrinter printer(columnNames, columnWidths);
+
 	// print final stats for every worker thread plus sum of all threads and free worker threads memory
 	PacketStats aggregatedStats;
 	for (std::vector<DpdkWorkerThread*>::iterator iter = args->workerThreadsVector->begin(); iter != args->workerThreadsVector->end(); iter++)
@@ -233,12 +240,12 @@ void onApplicationInterrupted(void* cookie)
 		AppWorkerThread* thread = (AppWorkerThread*)(*iter);
 		PacketStats threadStats = thread->getStats();
 		aggregatedStats.collectStats(threadStats);
-		if (iter == args->workerThreadsVector->begin())
-			threadStats.printStatsHeadline();
-		threadStats.printStats();
+		printer.printRow(threadStats.getStatValuesAsString("|"), '|');
 		delete thread;
 	}
-	aggregatedStats.printStats();
+
+	printer.printSeparator();
+	printer.printRow(aggregatedStats.getStatValuesAsString("|"), '|');
 
 	args->shouldStop = true;
 }
@@ -446,13 +453,6 @@ int main(int argc, char* argv[])
 		dpdkDevicesToUse.push_back(dev);
 	}
 
-	// get DPDK device to send packets to (or NULL if doesn't exist)
-	DpdkDevice* sendPacketsTo = DpdkDeviceList::getInstance().getDeviceByPort(sendPacketsToPort);
-	if (sendPacketsTo != NULL && !sendPacketsTo->open())
-	{
-		EXIT_WITH_ERROR("Could not open port#%d for sending matched packets", sendPacketsToPort);
-	}
-
 	// go over all devices and open them
 	for (vector<DpdkDevice*>::iterator iter = dpdkDevicesToUse.begin(); iter != dpdkDevicesToUse.end(); iter++)
 	{
@@ -460,6 +460,13 @@ int main(int argc, char* argv[])
 		{
 			EXIT_WITH_ERROR("Couldn't open DPDK device #%d, PMD '%s'", (*iter)->getDeviceId(), (*iter)->getPMDName().c_str());
 		}
+	}
+
+	// get DPDK device to send packets to (or NULL if doesn't exist)
+	DpdkDevice* sendPacketsTo = DpdkDeviceList::getInstance().getDeviceByPort(sendPacketsToPort);
+	if (sendPacketsTo != NULL && !sendPacketsTo->isOpened() &&  !sendPacketsTo->open())
+	{
+		EXIT_WITH_ERROR("Could not open port#%d for sending matched packets", sendPacketsToPort);
 	}
 
 	// prepare configuration for every core

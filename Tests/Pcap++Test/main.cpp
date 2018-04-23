@@ -374,14 +374,24 @@ public:
 		PCAPP_DEBUG_PRINT("Worker thread on core %d is starting", m_CoreId);
 
 		m_PacketCount = 0;
+		MBufRawPacket* mBufArr[32] = {};
+
 		while (!m_Stop)
 		{
-			RawPacketVector packetVec;
 			pthread_mutex_lock(m_QueueLock);
-			bool res = m_DpdkDevice->receivePackets(packetVec, m_QueueId);
+			uint16_t packetReceived = m_DpdkDevice->receivePackets(mBufArr, 32, m_QueueId);
 			pthread_mutex_unlock(m_QueueLock);
-			PCAPP_ASSERT(res == true, "Couldn't receive packets on thread %d", m_CoreId);
-			m_PacketCount += packetVec.size();
+			m_PacketCount += packetReceived;
+			pthread_mutex_lock(m_QueueLock);
+			uint16_t packetsSent = m_DpdkDevice->sendPackets(mBufArr, packetReceived, m_QueueId);
+			PCAPP_ASSERT(packetsSent == packetReceived, "Couldn't send all received packets on thread %d", m_CoreId);
+			pthread_mutex_unlock(m_QueueLock);
+		}
+
+		for (int i = 0; i < 32; i++)
+		{
+			if (mBufArr[i] != NULL)
+				delete mBufArr[i];
 		}
 
 		PCAPP_DEBUG_PRINT("Worker thread on %d stopped", m_CoreId);
@@ -988,6 +998,7 @@ PCAPP_TEST(TestPcapNgFileReadWriteAdv)
 
     RawPacket rawPacket;
     int packetCount = 0;
+    int capLenNotMatchOrigLen = 0;
     int ethCount = 0;
     int sllCount = 0;
     int ip4Count = 0;
@@ -1001,6 +1012,10 @@ PCAPP_TEST(TestPcapNgFileReadWriteAdv)
     while (readerDev.getNextPacket(rawPacket, pktComment))
     {
     	packetCount++;
+
+    	if (rawPacket.getRawDataLen() != rawPacket.getFrameLength())
+    		capLenNotMatchOrigLen++;
+
     	Packet packet(&rawPacket);
 		if (packet.isPacketOfType(Ethernet))
 			ethCount++;
@@ -1027,6 +1042,7 @@ PCAPP_TEST(TestPcapNgFileReadWriteAdv)
     }
 
     PCAPP_ASSERT(packetCount == 159, "Incorrect number of packets read. Expected: 159; read: %d", packetCount);
+    PCAPP_ASSERT(capLenNotMatchOrigLen == 39, "Incorrect number of packets where captured length doesn't match original length. Expected: 39; read: %d", capLenNotMatchOrigLen);
     PCAPP_ASSERT(ethCount == 59, "Incorrect number of Ethernet packets read. Expected: 59; read: %d", ethCount);
     PCAPP_ASSERT(sllCount == 100, "Incorrect number of SLL packets read. Expected: 100; read: %d", sllCount);
     PCAPP_ASSERT(ip4Count == 155, "Incorrect number of IPv4 packets read. Expected: 155; read: %d", ip4Count);
@@ -2910,6 +2926,23 @@ PCAPP_TEST(TestDpdkDevice)
 //	PCAPP_ASSERT(dev->getMtu() == newMtu, "MTU isn't properly set");
 //	PCAPP_ASSERT(dev->setMtu(origMtu) == true, "Couldn't set MTU back to original");
 
+	if (dev->getPMDName() == "net_e1000_em")
+	{
+		uint64_t rssHF = 0;
+		PCAPP_ASSERT(dev->isDeviceSupportRssHashFunction(rssHF) == true, "Not all RSS hash function are supported for pmd net_e1000_em");
+		PCAPP_ASSERT(dev->getSupportedRssHashFunctions() == rssHF, "RSS hash functions supported by device is different than expected");
+	}
+	else if (dev->getPMDName() == "net_vmxnet3")
+	{
+		uint64_t rssHF = DpdkDevice::RSS_IPV4 | \
+				DpdkDevice::RSS_NONFRAG_IPV4_TCP | \
+				DpdkDevice::RSS_IPV6 | \
+				DpdkDevice::RSS_NONFRAG_IPV6_TCP;
+
+		PCAPP_ASSERT(dev->isDeviceSupportRssHashFunction(rssHF) == true, "Not all RSS hash function are supported for pmd vmxnet3");
+		PCAPP_ASSERT(dev->getSupportedRssHashFunctions() == rssHF, "RSS hash functions supported by device is different than expected");
+	}
+
 	PCAPP_ASSERT(dev->open() == true, "Cannot open DPDK device");
 	LoggerPP::getInstance().supressErrors();
 	PCAPP_ASSERT(dev->open() == false, "Managed to open the device twice");
@@ -2936,21 +2969,25 @@ PCAPP_TEST(TestDpdkDevice)
 	PCAPP_DEBUG_PRINT("UDP packets: %d", packetData.UdpCount);
 	PCAPP_DEBUG_PRINT("HTTP packets: %d", packetData.HttpCount);
 
-	pcap_stat stats;
-	stats.ps_recv = 0;
-	stats.ps_drop = 0;
-	stats.ps_ifdrop = 0;
+	DpdkDevice::DpdkDeviceStats stats;
 	dev->getStatistics(stats);
-	PCAPP_DEBUG_PRINT("Packets captured according to stats: %d", stats.ps_recv);
-	PCAPP_DEBUG_PRINT("Packets dropped according to stats: %d", stats.ps_drop);
+	PCAPP_DEBUG_PRINT("Packets captured according to stats: %lu", stats.aggregatedRxStats.packets);
+	PCAPP_DEBUG_PRINT("Bytes captured according to stats: %lu", stats.aggregatedRxStats.bytes);
+	PCAPP_DEBUG_PRINT("Packets dropped according to stats: %lu", stats.rxPacketsDropeedByHW);
+	PCAPP_DEBUG_PRINT("Erroneous packets according to stats: %lu", stats.rxErroneousPackets);
+	for (int i = 0; i < DPDK_MAX_RX_QUEUES; i++)
+	{
+		PCAPP_DEBUG_PRINT("Packets captured on RX queue #%d according to stats: %lu", i, stats.rxStats[i].packets);
+		PCAPP_DEBUG_PRINT("Bytes captured on RX queue #%d according to stats: %lu", i, stats.rxStats[i].bytes);
 
+	}
 	PCAPP_ASSERT_AND_RUN_COMMAND(packetData.PacketCount > 0, dev->close(), "No packets were captured");
 	PCAPP_ASSERT_AND_RUN_COMMAND(packetData.ThreadId != -1, dev->close(), "Couldn't retrieve thread ID");
 
-	int statsVsPacketCount = stats.ps_recv > (uint32_t)packetData.PacketCount ? stats.ps_recv-(uint32_t)packetData.PacketCount : (uint32_t)packetData.PacketCount-stats.ps_recv;
+	int statsVsPacketCount = stats.aggregatedRxStats.packets > (uint64_t)packetData.PacketCount ? stats.aggregatedRxStats.packets-(uint64_t)packetData.PacketCount : (uint64_t)packetData.PacketCount-stats.aggregatedRxStats.packets;
 	PCAPP_ASSERT_AND_RUN_COMMAND(statsVsPacketCount <= 20, dev->close(),
-			"Stats received packet count (%d) is different than calculated packet count (%d)",
-			stats.ps_recv,
+			"Stats received packet count (%lu) is different than calculated packet count (%d)",
+			stats.aggregatedRxStats.packets,
 			packetData.PacketCount);
 	dev->close();
 	dev->close();
@@ -3033,11 +3070,7 @@ PCAPP_TEST(TestDpdkMultiThread)
 	PCAPP_ASSERT_AND_RUN_COMMAND(dev->startCaptureMultiThreads(dpdkPacketsArriveMultiThread, packetDataMultiThread, coreMask), dev->close(), "Cannot start capturing on multi threads");
 	PCAP_SLEEP(20);
 	dev->stopCapture();
-	pcap_stat aggrStats;
-	aggrStats.ps_recv = 0;
-	aggrStats.ps_drop = 0;
-	aggrStats.ps_ifdrop = 0;
-
+	uint64_t packetCount = 0;
 
 	for (int i = 0; i < getNumOfCores(); i++)
 	{
@@ -3052,17 +3085,25 @@ PCAPP_TEST(TestDpdkMultiThread)
 		PCAPP_DEBUG_PRINT("IPv6 packets: %d", packetDataMultiThread[i].Ip6Count);
 		PCAPP_DEBUG_PRINT("TCP packets: %d", packetDataMultiThread[i].TcpCount);
 		PCAPP_DEBUG_PRINT("UDP packets: %d", packetDataMultiThread[i].UdpCount);
-		aggrStats.ps_recv += packetDataMultiThread[i].PacketCount;
+		packetCount += packetDataMultiThread[i].PacketCount;
 	}
 
-	PCAPP_ASSERT_AND_RUN_COMMAND(aggrStats.ps_recv > 0, dev->close(), "No packets were captured on any thread");
+	PCAPP_ASSERT_AND_RUN_COMMAND(packetCount > 0, dev->close(), "No packets were captured on any thread");
 
-	pcap_stat stats;
+	DpdkDevice::DpdkDeviceStats stats;
 	dev->getStatistics(stats);
-	PCAPP_DEBUG_PRINT("Packets captured according to stats: %d", stats.ps_recv);
-	PCAPP_DEBUG_PRINT("Packets dropped according to stats: %d", stats.ps_drop);
-	PCAPP_ASSERT_AND_RUN_COMMAND(stats.ps_recv >= aggrStats.ps_recv, dev->close(), "Statistics from device differ from aggregated statistics on all threads");
-	PCAPP_ASSERT_AND_RUN_COMMAND(stats.ps_drop == 0, dev->close(), "Some packets were dropped");
+	PCAPP_DEBUG_PRINT("Packets captured according to stats: %lu", stats.aggregatedRxStats.packets);
+	PCAPP_DEBUG_PRINT("Bytes captured according to stats: %lu", stats.aggregatedRxStats.bytes);
+	PCAPP_DEBUG_PRINT("Packets dropped according to stats: %lu", stats.rxPacketsDropeedByHW);
+	PCAPP_DEBUG_PRINT("Erroneous packets according to stats: %lu", stats.rxErroneousPackets);
+	for (int i = 0; i < DPDK_MAX_RX_QUEUES; i++)
+	{
+		PCAPP_DEBUG_PRINT("Packets captured on RX queue #%d according to stats: %lu", i, stats.rxStats[i].packets);
+		PCAPP_DEBUG_PRINT("Bytes captured on RX queue #%d according to stats: %lu", i, stats.rxStats[i].bytes);
+
+	}
+	PCAPP_ASSERT_AND_RUN_COMMAND(stats.aggregatedRxStats.packets >= packetCount, dev->close(), "Statistics from device differ from aggregated statistics on all threads");
+	PCAPP_ASSERT_AND_RUN_COMMAND(stats.rxPacketsDropeedByHW == 0, dev->close(), "Some packets were dropped");
 
 	for (int firstCoreId = 0; firstCoreId < getNumOfCores(); firstCoreId++)
 	{
@@ -3154,48 +3195,43 @@ PCAPP_TEST(TestDpdkDeviceSendPackets)
     PcapFileReaderDevice fileReaderDev(EXAMPLE_PCAP_PATH);
     PCAPP_ASSERT(fileReaderDev.open(), "Cannot open file reader device");
 
-    RawPacket rawPacketArr[10000];
     PointerVector<Packet> packetVec;
     RawPacketVector rawPacketVec;
-    const Packet* packetArr[10000];
-    int packetsRead = 0;
-    while(fileReaderDev.getNextPacket(rawPacketArr[packetsRead]))
+    Packet* packetArr[10000];
+    uint16_t packetsRead = 0;
+    RawPacket rawPacket;
+    while(fileReaderDev.getNextPacket(rawPacket))
     {
-    	packetVec.pushBack(new Packet(&rawPacketArr[packetsRead]));
-    	rawPacketVec.pushBack(new RawPacket(rawPacketArr[packetsRead]));
+    	if (packetsRead == 100)
+    		break;
+    	RawPacket* newRawPacket = new RawPacket(rawPacket);
+    	rawPacketVec.pushBack(newRawPacket);
+    	Packet* newPacket = new Packet(newRawPacket, false);
+    	packetVec.pushBack(newPacket);
+    	packetArr[packetsRead] = newPacket;
+
       	packetsRead++;
     }
 
-    //send packets as RawPacket array
-    int freeMBufsBefore = dev->getAmountOfFreeMbufs();
-    int packetsSentAsRaw = dev->sendPackets(rawPacketArr, packetsRead);
-    int freeMBufsAfter = dev->getAmountOfFreeMbufs();
-    PCAPP_ASSERT(freeMBufsBefore == freeMBufsAfter, "MBuf leakage happened in sending RawPacket array");
-
     //send packets as parsed EthPacekt array
-    std::copy(packetVec.begin(), packetVec.end(), packetArr);
-    freeMBufsBefore = dev->getAmountOfFreeMbufs();
+    int freeMBufsBefore = dev->getAmountOfFreeMbufs();
     int packetsSentAsParsed = dev->sendPackets(packetArr, packetsRead);
-    freeMBufsAfter = dev->getAmountOfFreeMbufs();
-    PCAPP_ASSERT(freeMBufsBefore == freeMBufsAfter, "MBuf leakage happened in sending EthPacekt array");
+    int freeMBufsAfter = dev->getAmountOfFreeMbufs();
+    PCAPP_ASSERT(freeMBufsBefore == freeMBufsAfter, "MBuf leakage happened in sending EthPacekt array. Free MBufs before/after: %d/%d", freeMBufsBefore, freeMBufsAfter);
 
     //send packets are RawPacketVector
     freeMBufsBefore = dev->getAmountOfFreeMbufs();
     int packetsSentAsRawVector = dev->sendPackets(rawPacketVec);
     freeMBufsAfter = dev->getAmountOfFreeMbufs();
-    PCAPP_ASSERT(freeMBufsBefore == freeMBufsAfter, "MBuf leakage happened in sending RawPacketVector");
+    PCAPP_ASSERT(freeMBufsBefore == freeMBufsAfter, "MBuf leakage happened in sending RawPacketVector. Free MBufs before/after: %d/%d", freeMBufsBefore, freeMBufsAfter);
 
-    PCAPP_ASSERT(packetsSentAsRaw == packetsRead, "Not all packets were sent as raw. Expected (read from file): %d; Sent: %d", packetsRead, packetsSentAsRaw);
     PCAPP_ASSERT(packetsSentAsParsed == packetsRead, "Not all packets were sent as parsed. Expected (read from file): %d; Sent: %d", packetsRead, packetsSentAsParsed);
     PCAPP_ASSERT(packetsSentAsRawVector == packetsRead, "Not all packets were sent as raw vector. Expected (read from file): %d; Sent: %d", packetsRead, packetsSentAsRawVector);
 
     if (dev->getTotalNumOfTxQueues() > 1)
     {
-        packetsSentAsRaw = dev->sendPackets(rawPacketArr, packetsRead, dev->getTotalNumOfTxQueues()-1);
         packetsSentAsParsed = dev->sendPackets(packetArr, packetsRead, dev->getTotalNumOfTxQueues()-1);
         packetsSentAsRawVector = dev->sendPackets(rawPacketVec, dev->getTotalNumOfTxQueues()-1);
-        PCAPP_ASSERT(packetsSentAsRaw == packetsRead, "Not all packets were sent as raw to TX queue %d. Expected (read from file): %d; Sent: %d",
-        		dev->getTotalNumOfTxQueues()-1, packetsRead, packetsSentAsRaw);
         PCAPP_ASSERT(packetsSentAsParsed == packetsRead, "Not all packets were sent as parsed to TX queue %d. Expected (read from file): %d; Sent: %d",
         		dev->getTotalNumOfTxQueues()-1, packetsRead, packetsSentAsParsed);
         PCAPP_ASSERT(packetsSentAsRawVector == packetsRead, "Not all packets were sent as raw vector to TX queue %d. Expected (read from file): %d; Sent: %d",
@@ -3204,12 +3240,12 @@ PCAPP_TEST(TestDpdkDeviceSendPackets)
     }
 
     LoggerPP::getInstance().supressErrors();
-    PCAPP_ASSERT(dev->sendPackets(rawPacketArr, packetsRead, dev->getTotalNumOfTxQueues()+1) == 0, "Managed to send packets on TX queue that doesn't exist");
+    PCAPP_ASSERT(dev->sendPackets(rawPacketVec, dev->getTotalNumOfTxQueues()+1) == 0, "Managed to send packets on TX queue that doesn't exist");
     LoggerPP::getInstance().enableErrors();
 
     freeMBufsBefore = dev->getAmountOfFreeMbufs();
-    PCAPP_ASSERT(dev->sendPacket(rawPacketArr[2000], 0) == true, "Couldn't send 1 raw packet");
-    PCAPP_ASSERT(dev->sendPacket(*(packetArr[3000]), 0) == true, "Couldn't send 1 parsed packet");
+    PCAPP_ASSERT(dev->sendPacket(rawPacketVec.at(packetsRead/3), 0) == true, "Couldn't send 1 raw packet");
+    PCAPP_ASSERT(dev->sendPacket(*(packetArr[packetsRead/2]), 0) == true, "Couldn't send 1 parsed packet");
     freeMBufsAfter = dev->getAmountOfFreeMbufs();
     PCAPP_ASSERT(freeMBufsBefore == freeMBufsAfter, "MBuf leakage happened in sending one packet");
 
@@ -3240,27 +3276,29 @@ PCAPP_TEST(TestDpdkDeviceWorkerThreads)
 	DpdkDevice* dev = DpdkDeviceList::getInstance().getDeviceByPort(args.dpdkPort);
 	PCAPP_ASSERT(dev != NULL, "DpdkDevice is NULL");
 
-	RawPacketVector rawPacketVec;
-	MBufRawPacket* mBufRawPacketArr = NULL;
-	int mBufRawPacketArrLen = 0;
-	Packet* packetArr = NULL;
-	int packetArrLen = 0;
+	MBufRawPacketVector rawPacketVec;
+	MBufRawPacket* mBufRawPacketArr[32] = {};
+	size_t mBufRawPacketArrLen = 32;
+	Packet* packetArr[32] = {};
+	size_t packetArrLen = 32;
 
 	LoggerPP::getInstance().supressErrors();
-	PCAPP_ASSERT(dev->receivePackets(rawPacketVec, 0) == false, "Managed to receive packets although device isn't opened");
-	PCAPP_ASSERT(dev->receivePackets(&packetArr, packetArrLen, 0) == false, "Managed to receive packets although device isn't opened");
-	PCAPP_ASSERT(dev->receivePackets(&mBufRawPacketArr, mBufRawPacketArrLen, 0) == false, "Managed to receive packets although device isn't opened");
+	PCAPP_ASSERT(dev->receivePackets(rawPacketVec, 0) == 0, "Managed to receive packets although device isn't opened");
+	PCAPP_ASSERT(dev->receivePackets(packetArr, packetArrLen, 0) == 0, "Managed to receive packets although device isn't opened");
+	PCAPP_ASSERT(dev->receivePackets(mBufRawPacketArr, mBufRawPacketArrLen, 0) == 0, "Managed to receive packets although device isn't opened");
 
 	PCAPP_ASSERT(dev->open() == true, "Couldn't open DPDK device");
-	PCAPP_ASSERT(dev->receivePackets(rawPacketVec, dev->getTotalNumOfRxQueues()+1) == false, "Managed to receive packets for RX queue that doesn't exist");
-	PCAPP_ASSERT(dev->receivePackets(&packetArr, packetArrLen, dev->getTotalNumOfRxQueues()+1) == false, "Managed to receive packets for RX queue that doesn't exist");
-	PCAPP_ASSERT(dev->receivePackets(&mBufRawPacketArr, mBufRawPacketArrLen, dev->getTotalNumOfRxQueues()+1) == false, "Managed to receive packets for RX queue that doesn't exist");
+	PCAPP_ASSERT(dev->receivePackets(rawPacketVec, dev->getTotalNumOfRxQueues()+1) == 0, "Managed to receive packets for RX queue that doesn't exist");
+	PCAPP_ASSERT(dev->receivePackets(packetArr, packetArrLen, dev->getTotalNumOfRxQueues()+1) == 0, "Managed to receive packets for RX queue that doesn't exist");
+	PCAPP_ASSERT(dev->receivePackets(mBufRawPacketArr, mBufRawPacketArrLen, dev->getTotalNumOfRxQueues()+1) == 0, "Managed to receive packets for RX queue that doesn't exist");
 
 	DpdkPacketData packetData;
+	mBufRawPacketArrLen = 32;
+	packetArrLen = 32;
 	PCAPP_ASSERT_AND_RUN_COMMAND(dev->startCaptureSingleThread(dpdkPacketsArrive, &packetData), dev->close(), "Could not start capturing on DpdkDevice");
-	PCAPP_ASSERT(dev->receivePackets(rawPacketVec, 0) == false, "Managed to receive packets although device is in capture mode");
-	PCAPP_ASSERT(dev->receivePackets(&packetArr, packetArrLen, 0) == false, "Managed to receive packets although device is in capture mode");
-	PCAPP_ASSERT(dev->receivePackets(&mBufRawPacketArr, mBufRawPacketArrLen, 0) == false, "Managed to receive packets although device is in capture mode");
+	PCAPP_ASSERT(dev->receivePackets(rawPacketVec, 0) == 0, "Managed to receive packets although device is in capture mode");
+	PCAPP_ASSERT(dev->receivePackets(packetArr, packetArrLen, 0) == 0, "Managed to receive packets although device is in capture mode");
+	PCAPP_ASSERT(dev->receivePackets(mBufRawPacketArr, mBufRawPacketArrLen, 0) == 0, "Managed to receive packets although device is in capture mode");
 	LoggerPP::getInstance().enableErrors();
 	dev->stopCapture();
 	dev->close();
@@ -3270,7 +3308,7 @@ PCAPP_TEST(TestDpdkDeviceWorkerThreads)
 	int numOfAttempts = 0;
 	while (numOfAttempts < 10)
 	{
-		PCAPP_ASSERT(dev->receivePackets(rawPacketVec, 0) == true, "Couldn't receive packets");
+		dev->receivePackets(rawPacketVec, 0);
 		PCAP_SLEEP(1);
 		if (rawPacketVec.size() > 0)
 			break;
@@ -3283,30 +3321,40 @@ PCAPP_TEST(TestDpdkDeviceWorkerThreads)
 	numOfAttempts = 0;
 	while (numOfAttempts < 10)
 	{
-		PCAPP_ASSERT(dev->receivePackets(&mBufRawPacketArr, mBufRawPacketArrLen, 0) == true, "Couldn't receive packets");
+		mBufRawPacketArrLen = dev->receivePackets(mBufRawPacketArr, 32, 0);
 		PCAP_SLEEP(1);
-		if (mBufRawPacketArrLen > 0 && mBufRawPacketArr != NULL)
+		if (mBufRawPacketArrLen > 0)
 			break;
 		numOfAttempts++;
 	}
 
 	PCAPP_ASSERT(numOfAttempts < 10, "No packets were received using mBuf raw packet arr");
-	PCAPP_DEBUG_PRINT("Captured %d packets in %d attempts using mBuf raw packet arr", mBufRawPacketArrLen, numOfAttempts);
-	delete [] mBufRawPacketArr;
+	PCAPP_DEBUG_PRINT("Captured %d packets in %d attempts using mBuf raw packet arr", (int)mBufRawPacketArrLen, numOfAttempts);
+	for (int i = 0; i < 32; i++)
+	{
+		if (mBufRawPacketArr[i] != NULL)
+			delete mBufRawPacketArr[i];
+	}
+
 
 	numOfAttempts = 0;
 	while (numOfAttempts < 10)
 	{
-		PCAPP_ASSERT(dev->receivePackets(&packetArr, packetArrLen, 0) == true, "Couldn't receive packets");
+		packetArrLen = dev->receivePackets(packetArr, 32, 0);
 		PCAP_SLEEP(1);
-		if (packetArrLen > 0 && packetArr != NULL)
+		if (packetArrLen > 0)
 			break;
 		numOfAttempts++;
 	}
 
 	PCAPP_ASSERT(numOfAttempts < 10, "No packets were received using packet arr");
-	PCAPP_DEBUG_PRINT("Captured %d packets in %d attempts using packet arr", packetArrLen, numOfAttempts);
-	delete [] packetArr;
+	PCAPP_DEBUG_PRINT("Captured %d packets in %d attempts using packet arr", (int)packetArrLen, numOfAttempts);
+	for (int i = 0; i < 32; i++)
+	{
+		if (packetArr[i] != NULL)
+			delete packetArr[i];
+	}
+
 
 	int numOfRxQueues = dev->getTotalNumOfRxQueues();
 	pthread_mutex_t queueMutexArr[numOfRxQueues];
@@ -3336,7 +3384,26 @@ PCAPP_TEST(TestDpdkDeviceWorkerThreads)
 	PCAPP_ASSERT(devList.startDpdkWorkerThreads(workerThreadCoreMask, workerThreadVec) == true, "Couldn't start DPDK worker threads");
 	PCAPP_DEBUG_PRINT("Worker threads started");
 
-	PCAP_SLEEP(10);
+	for (int i = 0; i < 10; i++)
+	{
+		DpdkDevice::DpdkDeviceStats stats;
+		dev->getStatistics(stats);
+		PCAPP_DEBUG_PRINT("Packets captured   : %lu", stats.aggregatedRxStats.packets);
+		PCAPP_DEBUG_PRINT("Bytes captured     : %lu", stats.aggregatedRxStats.bytes);
+		PCAPP_DEBUG_PRINT("Bits per second    : %lu", stats.aggregatedRxStats.bytesPerSec*8);
+		PCAPP_DEBUG_PRINT("Packets per second : %lu", stats.aggregatedRxStats.packetsPerSec);
+		PCAPP_DEBUG_PRINT("Packets dropped    : %lu", stats.rxPacketsDropeedByHW);
+		PCAPP_DEBUG_PRINT("Erroneous packets  : %lu", stats.rxErroneousPackets);
+		for (int i = 0; i < DPDK_MAX_RX_QUEUES; i++)
+		{
+			PCAPP_DEBUG_PRINT("Packets captured on RX queue #%d according to stats: %lu", i, stats.rxStats[i].packets);
+			PCAPP_DEBUG_PRINT("Bytes captured on RX queue #%d according to stats: %lu", i, stats.rxStats[i].bytes);
+
+		}
+
+		PCAP_SLEEP(1);
+	}
+
 
 	PCAPP_DEBUG_PRINT("Worker threads stopping");
 	devList.stopDpdkWorkerThreads();
@@ -3423,7 +3490,8 @@ PCAPP_TEST(TestDpdkMbufRawPacket)
 		if (packet.isPacketOfType(VLAN))
 			vlanCount++;
 
-		PCAPP_ASSERT(dev->sendPacket(packet, 0) == true, "Couldn't send packet");
+		if (numOfPackets < 100)
+			PCAPP_ASSERT(dev->sendPacket(packet, 0) == true, "Couldn't send packet");
 	}
 
 	PCAPP_ASSERT(numOfPackets == 4709, "Wrong num of packets read. Expected 4709 got %d", numOfPackets);
@@ -3437,16 +3505,16 @@ PCAPP_TEST(TestDpdkMbufRawPacket)
 
 	// Test save MBufRawPacket to PCAP
 	// -------------------------------
-	RawPacketVector rawPacketVec;
+	MBufRawPacketVector rawPacketVec;
 	int numOfAttempts = 0;
 	while (numOfAttempts < 30)
 	{
 		bool foundTcpOrUdpPacket = false;
 		for (int i = 0; i < dev->getNumOfOpenedRxQueues(); i++)
 		{
-			PCAPP_ASSERT(dev->receivePackets(rawPacketVec, 0) == true, "Couldn't receive packets");
+			dev->receivePackets(rawPacketVec, 0);
 			PCAP_SLEEP(1);
-			for (RawPacketVector::VectorIterator iter = rawPacketVec.begin(); iter != rawPacketVec.end(); iter++)
+			for (MBufRawPacketVector::VectorIterator iter = rawPacketVec.begin(); iter != rawPacketVec.end(); iter++)
 			{
 				Packet packet(*iter);
 				if ((packet.isPacketOfType(TCP) || packet.isPacketOfType(UDP)) && packet.isPacketOfType(IPv4))
@@ -3467,7 +3535,10 @@ PCAPP_TEST(TestDpdkMbufRawPacket)
 
 	PcapFileWriterDevice writer(DPDK_PCAP_WRITE_PATH);
 	PCAPP_ASSERT(writer.open() == true, "Couldn't open pcap writer");
-	PCAPP_ASSERT(writer.writePackets(rawPacketVec) == true, "Couldn't write raw packets to file");
+	for (MBufRawPacketVector::VectorIterator iter = rawPacketVec.begin(); iter != rawPacketVec.end(); iter++)
+	{
+		PCAPP_ASSERT(writer.writePacket(**iter) == true, "Couldn't write raw packets to file");
+	}
 	writer.close();
 
 	PcapFileReaderDevice reader2(DPDK_PCAP_WRITE_PATH);
@@ -3484,7 +3555,7 @@ PCAPP_TEST(TestDpdkMbufRawPacket)
 	// ------------------------
 
 	MBufRawPacket* rawPacketToManipulate = NULL;
-	for (RawPacketVector::VectorIterator iter = rawPacketVec.begin(); iter != rawPacketVec.end(); iter++)
+	for (MBufRawPacketVector::VectorIterator iter = rawPacketVec.begin(); iter != rawPacketVec.end(); iter++)
 	{
 		Packet packet(*iter);
 		if ((packet.isPacketOfType(TCP) || packet.isPacketOfType(UDP)) && packet.isPacketOfType(IPv4))
@@ -3622,6 +3693,7 @@ struct TcpReassemblyStats
 	bool connectionsStarted;
 	bool connectionsEnded;
 	bool connectionsEndedManually;
+	ConnectionData connData;
 
 	TcpReassemblyStats() { clear(); }
 
@@ -3683,6 +3755,7 @@ void tcpReassemblyConnectionStartCallback(ConnectionData connectionData, void* u
 	}
 
 	iter->second.connectionsStarted = true;
+	iter->second.connData = connectionData;
 
 	//printf("conn 0x%X started\n", connectionData.flowKey);
 }
@@ -3829,6 +3902,13 @@ PCAPP_TEST(TestTcpReassemblySanity)
 	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connectionsStarted == true, "Connections wasn't opened");
 	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connectionsEnded == false, "Connection was ended with FIN or RST");
 	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connectionsEndedManually == true, "Connection wasn't ended manually");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connData.srcIP != NULL, "Source IP is NULL");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connData.dstIP != NULL, "Source IP is NULL");
+	IPv4Address expectedSrcIP(std::string("10.0.0.1"));
+	IPv4Address expectedDstIP(std::string("81.218.72.15"));
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connData.srcIP->equals(&expectedSrcIP), "Source IP isn't 10.0.0.1");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connData.dstIP->equals(&expectedDstIP), "Source IP isn't 81.218.72.15");
+
 
 	std::string expectedReassemblyData = readFileIntoString(std::string("PcapExamples/one_tcp_stream_output.txt"));
 	PCAPP_ASSERT(expectedReassemblyData == tcpReassemblyResults.begin()->second.reassembledData, "Reassembly data different than expected");
@@ -4229,6 +4309,162 @@ PCAPP_TEST(TestTcpReassemblyMultipleConns)
 
 	PCAPP_TEST_PASSED;
 }
+
+
+PCAPP_TEST(TestTcpReassemblyIPv6)
+{
+	std::string errMsg;
+	std::vector<RawPacket> packetStream;
+
+	PCAPP_ASSERT(tcpReassemblyReadPcapIntoPacketVec("PcapExamples/one_ipv6_http_stream.pcap", packetStream, errMsg) == true, "Error reading pcap file: %s", errMsg.c_str());
+
+	TcpReassemblyMultipleConnStats tcpReassemblyResults;
+	tcpReassemblyTest(packetStream, tcpReassemblyResults, true, true);
+
+	PCAPP_ASSERT(tcpReassemblyResults.size() == 1, "Num of connections isn't 1");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.numOfDataPackets == 10, "Num of data packets isn't 10, it's %d", tcpReassemblyResults.begin()->second.numOfDataPackets);
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.numOfMessagesFromSide[0] == 3, "Num of messages from side 0 isn't 3");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.numOfMessagesFromSide[1] == 3, "Num of messages from side 1 isn't 3");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connectionsStarted == true, "Connections wasn't opened");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connectionsEnded == false, "Connection was ended with FIN or RST");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connectionsEndedManually == true, "Connection wasn't ended manually");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connData.srcIP != NULL, "Source IP is NULL");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connData.dstIP != NULL, "Source IP is NULL");
+	IPv6Address expectedSrcIP(std::string("2001:618:400::5199:cc70"));
+	IPv6Address expectedDstIP(std::string("2001:618:1:8000::5"));
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connData.srcIP->equals(&expectedSrcIP), "Source IP isn't 2001:618:400::5199:cc70");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connData.dstIP->equals(&expectedDstIP), "Source IP isn't 2001:618:1:8000::5");
+
+	std::string expectedReassemblyData = readFileIntoString(std::string("PcapExamples/one_ipv6_http_stream.txt"));
+	PCAPP_ASSERT(expectedReassemblyData == tcpReassemblyResults.begin()->second.reassembledData, "Reassembly data different than expected");
+
+	PCAPP_TEST_PASSED;
+}
+
+
+PCAPP_TEST(TestTcpReassemblyIPv6MultConns)
+{
+	std::string errMsg;
+	std::vector<RawPacket> packetStream;
+	std::string expectedReassemblyData = "";
+
+	PCAPP_ASSERT(tcpReassemblyReadPcapIntoPacketVec("PcapExamples/four_ipv6_http_streams.pcap", packetStream, errMsg) == true, "Error reading pcap file: %s", errMsg.c_str());
+
+	TcpReassemblyMultipleConnStats tcpReassemblyResults;
+	tcpReassemblyTest(packetStream, tcpReassemblyResults, true, true);
+
+	PCAPP_ASSERT(tcpReassemblyResults.size() == 4, "Num of connections isn't 4");
+
+	TcpReassemblyMultipleConnStatsIter iter = tcpReassemblyResults.begin();
+
+	IPv6Address expectedSrcIP(std::string("2001:618:400::5199:cc70"));
+	IPv6Address expectedDstIP1(std::string("2001:618:1:8000::5"));
+	IPv6Address expectedDstIP2(std::string("2001:638:902:1:202:b3ff:feee:5dc2"));
+
+	PCAPP_ASSERT(iter->second.numOfDataPackets == 14, "Conn #1: Num of data packets isn't 14, it's %d", iter->second.numOfDataPackets);
+	PCAPP_ASSERT(iter->second.numOfMessagesFromSide[0] == 3, "Conn #1: Num of messages from side 0 isn't 3");
+	PCAPP_ASSERT(iter->second.numOfMessagesFromSide[1] == 3, "Conn #1: Num of messages from side 1 isn't 3");
+	PCAPP_ASSERT(iter->second.connectionsStarted == true, "Conn #1: Connection wasn't opened");
+	PCAPP_ASSERT(iter->second.connectionsEnded == false, "Conn #1: Connection ended with FIN or RST");
+	PCAPP_ASSERT(iter->second.connectionsEndedManually == true, "Conn #1: Connections wasn't ended manually");
+	PCAPP_ASSERT(iter->second.connData.srcIP != NULL, "Conn #1: Source IP is NULL");
+	PCAPP_ASSERT(iter->second.connData.dstIP != NULL, "Conn #1: Source IP is NULL");
+	PCAPP_ASSERT(iter->second.connData.srcIP->equals(&expectedSrcIP), "Conn #1: Source IP isn't 2001:618:400::5199:cc70");
+	PCAPP_ASSERT(iter->second.connData.dstIP->equals(&expectedDstIP1), "Conn #1: Source IP isn't 2001:618:1:8000::5");
+	PCAPP_ASSERT(iter->second.connData.srcPort == 35995, "Conn #1: source port isn't 35995");
+	expectedReassemblyData = readFileIntoString(std::string("PcapExamples/one_ipv6_http_stream4.txt"));
+	PCAPP_ASSERT(expectedReassemblyData == iter->second.reassembledData, "Conn #1: Reassembly data different than expected");
+
+	iter++;
+
+	PCAPP_ASSERT(iter->second.numOfDataPackets == 10, "Conn #2: Num of data packets isn't 10, it's %d", iter->second.numOfDataPackets);
+	PCAPP_ASSERT(iter->second.numOfMessagesFromSide[0] == 1, "Conn #2: Num of messages from side 0 isn't 1");
+	PCAPP_ASSERT(iter->second.numOfMessagesFromSide[1] == 1, "Conn #2: Num of messages from side 1 isn't 1");
+	PCAPP_ASSERT(iter->second.connectionsStarted == true, "Conn #2: Connection wasn't opened");
+	PCAPP_ASSERT(iter->second.connectionsEnded == false, "Conn #2: Connection ended with FIN or RST");
+	PCAPP_ASSERT(iter->second.connectionsEndedManually == true, "Conn #2: Connections wasn't ended manually");
+	PCAPP_ASSERT(iter->second.connData.srcIP != NULL, "Conn #2: Source IP is NULL");
+	PCAPP_ASSERT(iter->second.connData.dstIP != NULL, "Conn #2: Source IP is NULL");
+	PCAPP_ASSERT(iter->second.connData.srcIP->equals(&expectedSrcIP), "Conn #2: Source IP isn't 2001:618:400::5199:cc70");
+	PCAPP_ASSERT(iter->second.connData.dstIP->equals(&expectedDstIP1), "Conn #2: Source IP isn't 2001:618:1:8000::5");
+	PCAPP_ASSERT(iter->second.connData.srcPort == 35999, "Conn #2: source port isn't 35999");
+
+	iter++;
+
+	PCAPP_ASSERT(iter->second.numOfDataPackets == 2, "Conn #3: Num of data packets isn't 2, it's %d", iter->second.numOfDataPackets);
+	PCAPP_ASSERT(iter->second.numOfMessagesFromSide[0] == 1, "Conn #3: Num of messages from side 0 isn't 1");
+	PCAPP_ASSERT(iter->second.numOfMessagesFromSide[1] == 1, "Conn #3: Num of messages from side 1 isn't 1");
+	PCAPP_ASSERT(iter->second.connectionsStarted == true, "Conn #3: Connection wasn't opened");
+	PCAPP_ASSERT(iter->second.connectionsEnded == false, "Conn #3: Connection ended with FIN or RST");
+	PCAPP_ASSERT(iter->second.connectionsEndedManually == true, "Conn #3: Connections wasn't ended manually");
+	PCAPP_ASSERT(iter->second.connData.srcIP != NULL, "Conn #3: Source IP is NULL");
+	PCAPP_ASSERT(iter->second.connData.dstIP != NULL, "Conn #3: Source IP is NULL");
+	PCAPP_ASSERT(iter->second.connData.srcIP->equals(&expectedSrcIP), "Conn #3: Source IP isn't 2001:618:400::5199:cc70");
+	PCAPP_ASSERT(iter->second.connData.dstIP->equals(&expectedDstIP2), "Conn #3: Source IP isn't 2001:638:902:1:202:b3ff:feee:5dc2");
+	PCAPP_ASSERT(iter->second.connData.srcPort == 40426, "Conn #3: source port isn't 40426");
+	expectedReassemblyData = readFileIntoString(std::string("PcapExamples/one_ipv6_http_stream3.txt"));
+	PCAPP_ASSERT(expectedReassemblyData == iter->second.reassembledData, "Conn #3: Reassembly data different than expected");
+
+	iter++;
+
+	PCAPP_ASSERT(iter->second.numOfDataPackets == 13, "Conn #4: Num of data packets isn't 13, it's %d", iter->second.numOfDataPackets);
+	PCAPP_ASSERT(iter->second.numOfMessagesFromSide[0] == 4, "Conn #4: Num of messages from side 0 isn't 4");
+	PCAPP_ASSERT(iter->second.numOfMessagesFromSide[1] == 4, "Conn #4: Num of messages from side 1 isn't 4");
+	PCAPP_ASSERT(iter->second.connectionsStarted == true, "Conn #4: Connection wasn't opened");
+	PCAPP_ASSERT(iter->second.connectionsEnded == false, "Conn #4: Connection ended with FIN or RST");
+	PCAPP_ASSERT(iter->second.connectionsEndedManually == true, "Conn #4: Connections wasn't ended manually");
+	PCAPP_ASSERT(iter->second.connData.srcIP != NULL, "Conn #4: Source IP is NULL");
+	PCAPP_ASSERT(iter->second.connData.dstIP != NULL, "Conn #4: Source IP is NULL");
+	PCAPP_ASSERT(iter->second.connData.srcIP->equals(&expectedSrcIP), "Conn #4: Source IP isn't 2001:618:400::5199:cc70");
+	PCAPP_ASSERT(iter->second.connData.dstIP->equals(&expectedDstIP1), "Conn #4: Source IP isn't 2001:618:1:8000::5");
+	PCAPP_ASSERT(iter->second.connData.srcPort == 35997, "Conn #4: source port isn't 35997");
+	expectedReassemblyData = readFileIntoString(std::string("PcapExamples/one_ipv6_http_stream2.txt"));
+	PCAPP_ASSERT(expectedReassemblyData == iter->second.reassembledData, "Conn #4: Reassembly data different than expected");
+
+	PCAPP_TEST_PASSED;
+}
+
+
+PCAPP_TEST(TestTcpReassemblyIPv6_OOO)
+{
+	std::string errMsg;
+	std::vector<RawPacket> packetStream;
+
+	PCAPP_ASSERT(tcpReassemblyReadPcapIntoPacketVec("PcapExamples/one_ipv6_http_stream.pcap", packetStream, errMsg) == true, "Error reading pcap file: %s", errMsg.c_str());
+
+	// swap 2 non-consequent packets
+	RawPacket oooPacket1 = packetStream[10];
+	packetStream.erase(packetStream.begin() + 10);
+	packetStream.insert(packetStream.begin() + 12, oooPacket1);
+
+	// swap additional 2 non-consequent packets
+	oooPacket1 = packetStream[15];
+	packetStream.erase(packetStream.begin() + 15);
+	packetStream.insert(packetStream.begin() + 17, oooPacket1);
+
+	TcpReassemblyMultipleConnStats tcpReassemblyResults;
+	tcpReassemblyTest(packetStream, tcpReassemblyResults, true, true);
+
+	PCAPP_ASSERT(tcpReassemblyResults.size() == 1, "Num of connections isn't 1");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.numOfDataPackets == 10, "Num of data packets isn't 10, it's %d", tcpReassemblyResults.begin()->second.numOfDataPackets);
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.numOfMessagesFromSide[0] == 3, "Num of messages from side 0 isn't 3");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.numOfMessagesFromSide[1] == 3, "Num of messages from side 1 isn't 3");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connectionsStarted == true, "Connections wasn't opened");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connectionsEnded == false, "Connection was ended with FIN or RST");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connectionsEndedManually == true, "Connection wasn't ended manually");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connData.srcIP != NULL, "Source IP is NULL");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connData.dstIP != NULL, "Source IP is NULL");
+	IPv6Address expectedSrcIP(std::string("2001:618:400::5199:cc70"));
+	IPv6Address expectedDstIP(std::string("2001:618:1:8000::5"));
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connData.srcIP->equals(&expectedSrcIP), "Source IP isn't 2001:618:400::5199:cc70");
+	PCAPP_ASSERT(tcpReassemblyResults.begin()->second.connData.dstIP->equals(&expectedDstIP), "Source IP isn't 2001:618:1:8000::5");
+
+	std::string expectedReassemblyData = readFileIntoString(std::string("PcapExamples/one_ipv6_http_stream.txt"));
+	PCAPP_ASSERT(expectedReassemblyData == tcpReassemblyResults.begin()->second.reassembledData, "Reassembly data different than expected");
+
+	PCAPP_TEST_PASSED;
+}
+
 
 void savePacketToFile(RawPacket& packet, std::string fileName)
 {
@@ -5395,6 +5631,9 @@ int main(int argc, char* argv[])
 	PCAPP_RUN_TEST(TestTcpReassemblyWithFIN_RST, args, false);
 	PCAPP_RUN_TEST(TestTcpReassemblyMalformedPkts, args, false);
 	PCAPP_RUN_TEST(TestTcpReassemblyMultipleConns, args, false);
+	PCAPP_RUN_TEST(TestTcpReassemblyIPv6, args, false);
+	PCAPP_RUN_TEST(TestTcpReassemblyIPv6MultConns, args, false);
+	PCAPP_RUN_TEST(TestTcpReassemblyIPv6_OOO, args, false);
 	PCAPP_RUN_TEST(TestIPFragmentationSanity, args, false);
 	PCAPP_RUN_TEST(TestIPFragOutOfOrder, args, false);
 	PCAPP_RUN_TEST(TestIPFragPartialData, args, false);
