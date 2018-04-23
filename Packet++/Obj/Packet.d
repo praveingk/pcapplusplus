@@ -4,7 +4,7 @@ Obj/Packet.d: src/Packet.cpp header/Packet.h header/RawPacket.h \
  header/NullLoopbackLayer.h header/IPv4Layer.h \
  ../Common++/header/IpAddress.h header/IPv6Layer.h \
  header/IPv6Extensions.h header/PayloadLayer.h \
- ../Common++/header/Logger.h
+ header/PacketTrailerLayer.h ../Common++/header/Logger.h
 
 header/Packet.h:
 
@@ -31,5 +31,7 @@ header/IPv6Layer.h:
 header/IPv6Extensions.h:
 
 header/PayloadLayer.h:
+
+header/PacketTrailerLayer.h:
 
 ../Common++/header/Logger.h:

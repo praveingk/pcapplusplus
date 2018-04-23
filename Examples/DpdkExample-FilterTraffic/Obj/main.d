@@ -24,8 +24,7 @@ Obj/main.d: main.cpp Common.h \
  /home/pravein/myResearch/myp4dev/pcapplusplus/Dist/header/DpdkDevice.h \
  /home/pravein/myResearch/myp4dev/pcapplusplus/Dist/header/Logger.h \
  /home/pravein/myResearch/myp4dev/pcapplusplus/Dist/header/PcapFileDevice.h \
- /home/pravein/myResearch/myp4dev/pcapplusplus/Dist/header/PcapPlusPlusVersion.h \
- /home/pravein/myResearch/myp4dev/pcapplusplus/Dist/header/TablePrinter.h
+ /home/pravein/myResearch/myp4dev/pcapplusplus/Dist/header/PcapPlusPlusVersion.h
 
 Common.h:
 
@@ -82,5 +81,3 @@ AppWorkerThread.h:
 /home/pravein/myResearch/myp4dev/pcapplusplus/Dist/header/PcapFileDevice.h:
 
 /home/pravein/myResearch/myp4dev/pcapplusplus/Dist/header/PcapPlusPlusVersion.h:
-
-/home/pravein/myResearch/myp4dev/pcapplusplus/Dist/header/TablePrinter.h:
