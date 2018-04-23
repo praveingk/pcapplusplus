@@ -58,10 +58,7 @@ Obj/DpdkDevice.d: src/DpdkDevice.cpp header/DpdkDevice.h \
  /home/pravein/myResearch/myp4dev/dpdk-stable-17.11.1//build/include/generic/rte_byteorder.h \
  /home/pravein/myResearch/myp4dev/dpdk-stable-17.11.1//build/include/rte_byteorder_64.h \
  /home/pravein/myResearch/myp4dev/dpdk-stable-17.11.1//build/include/rte_eth_ctrl.h \
- /home/pravein/myResearch/myp4dev/dpdk-stable-17.11.1//build/include/rte_dev_info.h \
- /home/pravein/myResearch/myp4dev/dpdk-stable-17.11.1//build/include/rte_malloc.h \
- /home/pravein/myResearch/myp4dev/dpdk-stable-17.11.1//build/include/rte_cycles.h \
- /home/pravein/myResearch/myp4dev/dpdk-stable-17.11.1//build/include/generic/rte_cycles.h
+ /home/pravein/myResearch/myp4dev/dpdk-stable-17.11.1//build/include/rte_dev_info.h
 
 header/DpdkDevice.h:
 
@@ -202,9 +199,3 @@ header/DpdkDevice.h:
 /home/pravein/myResearch/myp4dev/dpdk-stable-17.11.1//build/include/rte_eth_ctrl.h:
 
 /home/pravein/myResearch/myp4dev/dpdk-stable-17.11.1//build/include/rte_dev_info.h:
-
-/home/pravein/myResearch/myp4dev/dpdk-stable-17.11.1//build/include/rte_malloc.h:
-
-/home/pravein/myResearch/myp4dev/dpdk-stable-17.11.1//build/include/rte_cycles.h:
-
-/home/pravein/myResearch/myp4dev/dpdk-stable-17.11.1//build/include/generic/rte_cycles.h:

@@ -2,7 +2,6 @@
 #define PCAPPP_DPDK_DEVICE
 
 #include <pthread.h>
-#include <time.h>
 #include "MacAddress.h"
 #include "SystemUtils.h"
 #include "RawPacket.h"
@@ -56,7 +55,6 @@
 struct rte_mbuf;
 struct rte_mempool;
 struct rte_eth_conf;
-struct rte_eth_dev_tx_buffer;
 
 /**
 * \namespace pcpp
@@ -64,10 +62,6 @@ struct rte_eth_dev_tx_buffer;
 */
 namespace pcpp
 {
-
-#define DPDK_MAX_RX_QUEUES 16
-#define DPDK_MAX_TX_QUEUES 16
-
 
 	class DpdkDeviceList;
 	class DpdkDevice;
@@ -117,8 +111,6 @@ namespace pcpp
 	};
 
 	class DpdkDevice;
-
-	#define MBUFRAWPACKET_OBJECT_TYPE 1
 
 	/**
 	 * @class MBufRawPacket
@@ -176,33 +168,11 @@ namespace pcpp
 		 * The user should call this method only once per instance. Calling it more than once will result with an error
 		 * @param[in] device The DpdkDevice which has the pool to allocate the mbuf from
 		 * @return True if initialization succeeded and false if this method was already called for this instance (and an mbuf is
-		 * already attached) or if allocating an mbuf from the pool failed for some reason
+		 * already attched) or if allocating an mbuf from the pool failed for some reason
 		 */
 		bool init(DpdkDevice* device);
 
-		/**
-		 * Initialize an instance of this class and copies the content of a RawPacket object.
-		 * Initialization includes allocating an mbuf from the pool that resides in provided DpdkDevice, and copying the data
-		 * from the input RawPacket object into this mBuf.
-		 * The user should call this method only once per instance. Calling it more than once will result with an error
-		 * @param[in] rawPacket A pointer to a RawPacket object from which data will be copied
-		 * @param[in] device The DpdkDevice which has the pool to allocate the mbuf from
-		 * @return True if initialization succeeded and false if this method was already called for this instance (and an mbuf is
-		 * already attached) or if allocating an mbuf from the pool failed for some reason
-		 */
-		bool initFromRawPacket(const RawPacket* rawPacket, DpdkDevice* device);
-
-		/**
-		 * @return A pointer to the DPDK mbuf stored in this object
-		 */
-		inline rte_mbuf* getMBuf() { return m_MBuf; }
-
 		// overridden methods
-
-		/**
-		 * @return MBufRawPacket object type
-		 */
-		virtual inline uint8_t getObjectType() const { return MBUFRAWPACKET_OBJECT_TYPE; }
 
 		/**
 		 * An assignment operator for this class. Copies the data from the mbuf attached to the other MBufRawPacket to the mbuf
@@ -220,13 +190,10 @@ namespace pcpp
 		 * @param[in] pRawData A pointer to the new raw data
 		 * @param[in] rawDataLen The new raw data length in bytes
 		 * @param[in] timestamp The timestamp packet was received by the NIC
-		 * @param[in] layerType The link layer type for this raw data. Default is Ethernet
-		 * @param[in] frameLength When reading from pcap files, sometimes the captured length is different from the actual packet length. This parameter represents the packet
-		 * length. This parameter is optional, if not set or set to -1 it is assumed both lengths are equal
 		 * @return True if raw data was copied to the mbuf successfully, false if rawDataLen is larger than mbuf max size, if initialization
 		 * failed or if copying the data to the mbuf failed. In all of these cases an error will be printed to log
 		 */
-		bool setRawData(const uint8_t* pRawData, int rawDataLen, timeval timestamp, LinkLayerType layerType = LINKTYPE_ETHERNET, int frameLength = -1);
+		bool setRawData(const uint8_t* pRawData, int rawDataLen, timeval timestamp);
 
 		/**
 		 * Clears the object and frees the mbuf
@@ -280,12 +247,6 @@ namespace pcpp
 	 * @param[in] userCookie The user cookie assigned by the user in DpdkDevice#startCaptureSingleThread() or DpdkDevice#startCaptureMultiThreads
 	 */
 	typedef void (*OnDpdkPacketsArriveCallback)(MBufRawPacket* packets, uint32_t numOfPackets, uint8_t threadId, DpdkDevice* device, void* userCookie);
-
-	/**
-	 * @typedef MBufRawPacketVector
-	 * A vector of pointers to MBufRawPacket
-	 */
-	typedef PointerVector<MBufRawPacket> MBufRawPacketVector;
 
 	/**
 	 * @class PciAddress
@@ -364,9 +325,7 @@ namespace pcpp
 	 *      DpdkDevice#startCaptureSingleThread()
 	 *
 	 * __Sending packets:__ DpdkDevice has various methods for sending packets. They enable sending raw packets, parsed packets, etc.
-	 * for all opened TX queues. Also, DPDK provides an option to buffer TX packets and send them only when reaching a certain threshold (you
-	 * can read more about it here: http://dpdk.org/doc/api/rte__ethdev_8h.html#a0e941a74ae1b1b886764bc282458d946). DpdkDevice supports that
-	 * option as well. See DpdkDevice#sendPackets()<BR>
+	 * for all opened TX queues. See DpdkDevice#sendPackets()<BR>
 	 *
 	 * __Get interface info__: DpdkDevice provides all kind of information on the interface/device such as MAC address, MTU, link status,
 	 * PCI address, PMD (poll-mode-driver) used for this port, etc. In addition it provides RX/TX statistics when receiving or sending
@@ -383,54 +342,6 @@ namespace pcpp
 		friend class DpdkDeviceList;
 		friend class MBufRawPacket;
 	public:
-
-		/**
-		 * An enum describing all RSS (Receive Side Scaling) hash functions supported in DPDK. Notice not all
-		 * PMDs support all types of hash functions
-		 */
-		enum DpdkRssHashFunction
-		{
-			/** IPv4 based flow */
-			RSS_IPV4				= 0x1,
-			/** Fragmented IPv4 based flow */
-			RSS_FRAG_IPV4			= 0x2,
-			/** Non-fragmented IPv4 + TCP flow */
-			RSS_NONFRAG_IPV4_TCP	= 0x4,
-			/** Non-fragmented IPv4 + UDP flow */
-			RSS_NONFRAG_IPV4_UDP	= 0x8,
-			/** Non-fragmented IPv4 + SCTP flow */
-			RSS_NONFRAG_IPV4_SCTP	= 0x10,
-			/** Non-fragmented IPv4 + non TCP/UDP/SCTP flow */
-			RSS_NONFRAG_IPV4_OTHER	= 0x20,
-			/** IPv6 based flow */
-			RSS_IPV6				= 0x40,
-			/** Fragmented IPv6 based flow */
-			RSS_FRAG_IPV6			= 0x80,
-			/** Non-fragmented IPv6 + TCP flow */
-			RSS_NONFRAG_IPV6_TCP	= 0x100,
-			/** Non-fragmented IPv6 + UDP flow */
-			RSS_NONFRAG_IPV6_UDP	= 0x200,
-			/** Non-fragmented IPv6 + SCTP flow */
-			RSS_NONFRAG_IPV6_SCTP	= 0x400,
-			/** Non-fragmented IPv6 + non TCP/UDP/SCTP flow */
-			RSS_NONFRAG_IPV6_OTHER	= 0x800,
-			/** L2 payload based flow */
-			RSS_L2_PAYLOAD			= 0x1000,
-			/** IPv6 Ex based flow */
-			RSS_IPV6_EX				= 0x2000,
-			/** IPv6 + TCP Ex based flow */
-			RSS_IPV6_TCP_EX			= 0x4000,
-			/** IPv6 + UDP Ex based flow */
-			RSS_IPV6_UDP_EX			= 0x8000,
-			/** Consider device port number as a flow differentiator */
-			RSS_PORT				= 0x10000,
-			/** VXLAN protocol based flow */
-			RSS_VXLAN				= 0x20000,
-			/** GENEVE protocol based flow */
-			RSS_GENEVE				= 0x40000,
-			/** NVGRE protocol based flow */
-			RSS_NVGRE				= 0x80000
-		};
 
 		/**
 		 * @struct DpdkDeviceConfiguration
@@ -452,58 +363,16 @@ namespace pcpp
 			uint16_t transmitDescriptorsNumber;
 
 			/**
-			 * Set the TX buffer flush timeout in millisecond (only relevant if sending packets using DPDK TX buffer mechanism).
-			 * A value of zero means no timeout
-			 */
-			uint16_t flushTxBufferTimeout;
-
- 			/**
-			 * When configuring a DPDK device, DPDK supports to activate the Receive Side Scaling (RSS) feature to distribute traffic between the RX queues
-			 * This parameter points to an array holding the RSS key to use for hashing specific header fields of received packets.
-			 * The length of this array should be indicated by rssKeyLength below.
-			 * Supplying a NULL value causes a default random hash key to be used by the device driver
-			 */
-			uint8_t* rssKey;
-
-			/**
-			 * This parameter indicates the length in bytes of the array pointed by rssKey.
-			 * This length will be checked in i40e only. Others assume 40 bytes to be used.
-			 */
-			uint8_t rssKeyLength;
-
-			/**
-			 * This parameter enables to configure the types of packets to which the RSS hashing must be applied. The value
-			 * is a mask composed of hash functions described in DpdkRssHashFunction enum. Supplying a value equal to zero
-			 * disables the RSS feature. Supplying a value equal to -1 enables all hash functions supported by this PMD
-			 */
-			uint64_t rssHashFunction;
-
-			/**
-			 * A c'tor for this struct
+			 * A c'tor for this strcut
 			 * @param[in] receiveDescriptorsNumber An optional parameter for defining the number of RX descriptors that will be allocated for each RX queue.
 			 * Default value is 128
 			 * @param[in] transmitDescriptorsNumber An optional parameter for defining the number of TX descriptors that will be allocated for each TX queue.
 			 * Default value is 512
-			 * @param[in] flushTxBufferTimeout An optional parameter for setting TX buffer timeout in usec. Default value is 100 usec
-			 * @param[in] rssHashFunction This parameter enable to configure the types of packets to which the RSS hashing must be applied.
-			 * The value provided here should be a mask composed of hash functions described in DpdkRssHashFunction enum. The default value is IPv4 and IPv6
-			 * @param[in] rssKey A pointer to an array holding the RSS key to use for hashing specific header of received packets. If not
-			 * specified, there is a default key defined inside DpdkDevice
-			 * @param[in] rssKeyLength The length in bytes of the array pointed by rssKey. Default value is the length of default rssKey
 			 */
-			DpdkDeviceConfiguration(uint16_t receiveDescriptorsNumber = 128,
-					uint16_t transmitDescriptorsNumber = 512,
-					uint16_t flushTxBufferTimeout = 100,
-					uint64_t rssHashFunction = RSS_IPV4 | RSS_IPV6,
-					uint8_t* rssKey = DpdkDevice::m_RSSKey,
-					uint8_t rssKeyLength = 40)
+			DpdkDeviceConfiguration(uint16_t receiveDescriptorsNumber = 128, uint16_t transmitDescriptorsNumber = 512)
 			{
 				this->receiveDescriptorsNumber = receiveDescriptorsNumber;
 				this->transmitDescriptorsNumber = transmitDescriptorsNumber;
-				this->flushTxBufferTimeout = flushTxBufferTimeout;
-				this->rssKey = rssKey;
-				this->rssKeyLength = rssKeyLength;
-				this->rssHashFunction = rssHashFunction;
 			}
 		};
 
@@ -530,49 +399,7 @@ namespace pcpp
 			LinkDuplex linkDuplex;
 		};
 
-		/**
-		 * @struct RxTxStats
-		 * A container for RX/TX statistics
-		 */
-		struct RxTxStats
-		{
-			/** Total number of packets */
-			uint64_t packets;
-			/** Total number of successfully received bytes */
-			uint64_t bytes;
-			/** Packets per second */
-			uint64_t packetsPerSec;
-			/** Bytes per second */
-			uint64_t bytesPerSec;
-		};
-
-		/**
-		 * @struct DpdkDeviceStats
-		 * A container for DpdkDevice statistics
-		 */
-		struct DpdkDeviceStats
-		{
-			/** DpdkDevice ID */
-			uint8_t devId;
-			/** The timestamp of when the stats were written */
-			timespec timestamp;
-			/** RX statistics per RX queue */
-			RxTxStats rxStats[DPDK_MAX_RX_QUEUES];
-			/** TX statistics per TX queue */
-			RxTxStats txStats[DPDK_MAX_RX_QUEUES];
-			/** RX statistics, aggregated for all RX queues */
-			RxTxStats aggregatedRxStats;
-			/** TX statistics, aggregated for all TX queues */
-			RxTxStats aggregatedTxStats;
-			/** Total number of RX packets dropped by H/W because there are no available buffers (i.e RX queues are full) */
-			uint64_t rxPacketsDropeedByHW;
-			/** Total number of erroneous packets */
-			uint64_t rxErroneousPackets;
-			/** Total number of RX mbuf allocation failuers */
-			uint64_t rxMbufAlocFailed;
-		};
-
-		virtual ~DpdkDevice();
+		virtual ~DpdkDevice() {}
 
 		/**
 		 * @return The device ID (DPDK port ID)
@@ -658,158 +485,113 @@ namespace pcpp
 		 * Receive raw packets from the network
 		 * @param[out] rawPacketsArr A vector where all received packets will be written into
 		 * @param[in] rxQueueId The RX queue to receive packets from
-		 * @return The number of packets received. If an error occurred 0 will be returned and the error will be printed to log
+		 * @return True if packets were received and no error occurred or false if device isn't opened, if device is currently capturing
+		 * (using startCaptureSingleThread() or startCaptureMultiThreads() ), if rxQueueId doesn't exist on device, or if DPDK receive packets method returned
+		 * an error
 		 */
-		uint16_t receivePackets(MBufRawPacketVector& rawPacketsArr, uint16_t rxQueueId);
+		bool receivePackets(RawPacketVector& rawPacketsArr, uint16_t rxQueueId);
 
 		/**
-		 * Receive raw packets from the network. Please notice that in terms of performance, this is the best method to use
-		 * for receiving packets because out of all receivePackets overloads this method requires the least overhead and is
-		 * almost as efficient as receiving packets directly through DPDK. So if performance is a critical factor in your
-		 * application, please use this method
-		 * @param[out] rawPacketsArr A pointer to an array of MBufRawPacket pointers where all received packets will be written into. The array is expected to
-		 * be allocated by the user and its length should be provided in rawPacketArrLength. Number of packets received will be returned.
-		 * Notice it's the user responsibility to free the array and its content when done using it
-		 * @param[out] rawPacketArrLength The length of MBufRawPacket pointers array
+		 * Receive raw packets from the network
+		 * @param[out] rawPacketsArr A pointer to a non-allocated array of MBufRawPacket pointers where all received packets will be written into. The array
+		 * will be allocated by this method and its length will be written into rawPacketArrLength. Notice it's the user responsibility to free the array and
+		 * its content when done using it
+		 * @param[out] rawPacketArrLength The length of MBufRawPacket pointers array will be written into
 		 * @param[in] rxQueueId The RX queue to receive packets from
-		 * @return The number of packets received. If an error occurred 0 will be returned and the error will be printed to log
+		 * @param[in] reuse Signifies that *rawPacketsArr already contains an array of MBufRawPacket objects with length equals to rawPacketArrLength. If provided
+		 * array is big enough to store the burst of packets received from NIC it will not be reallocated, otherwise it will. During the reallocation provided 
+		 * array will be freed using delete[] expression so you must allocate it with new[] expression.
+		 * @return True if packets were received and no error occurred or false if device isn't opened, if device is currently in capture mode
+		 * (using startCaptureSingleThread() or startCaptureMultiThreads() ), if rxQueueId doesn't exist on device, or if DPDK receive packets method returned
+		 * an error
 		 */
-		uint16_t receivePackets(MBufRawPacket** rawPacketsArr, uint16_t rawPacketArrLength, uint16_t rxQueueId);
+		bool receivePackets(MBufRawPacket** rawPacketsArr, int& rawPacketArrLength, uint16_t rxQueueId, bool reuse = false);
 
 		/**
 		 * Receive parsed packets from the network
-		 * @param[out] packetsArr A pointer to an allocated array of Packet pointers where all received packets will be written into. The array is expected to
-		 * be allocated by the user and its length should be provided in packetsArrLength. Number of packets received will be returned.
-		 * Notice it's the user responsibility to free the array and its content when done using it
-		 * @param[out] packetsArrLength The length of Packet pointers array
+		 * @param[out] packetsArr A pointer to a non-allocated array of Packet pointers where all received packets will be written into. The array
+		 * will be allocated by this method and its length will be written into packetsArrLength. Notice it's the user responsibility to free the array and
+		 * its content when done using it
+		 * @param[out] packetsArrLength The length of Packet pointers array will be written into
 		 * @param[in] rxQueueId The RX queue to receive packets from
-		 * @return The number of packets received. If an error occurred 0 will be returned and the error will be printed to log
+		 * @return True if packets were received and no error occurred or false if device isn't opened, if device is currently capturing
+		 * (using startCaptureSingleThread() or startCaptureMultiThreads() ), if rxQueueId doesn't exist on device, or if DPDK receive packets method returned
+		 * an error
 		 */
-		uint16_t receivePackets(Packet** packetsArr, uint16_t packetsArrLength, uint16_t rxQueueId);
+		bool receivePackets(Packet** packetsArr, int& packetsArrLength, uint16_t rxQueueId);
 
 		/**
-		 * Send an array of MBufRawPacket to the network. Please notice the following:<BR>
-		 * - In terms of performance, this is the best method to use for sending packets because out of all sendPackets overloads
-		 * this method requires the least overhead and is almost as efficient as sending the packets directly through DPDK. So if performance
-		 * is a critical factor in your application, please use this method
-		 * - If the number of packets to send is higher than 64 this method will run multiple iterations of sending packets to DPDK, each
-		 * iteration of 64 packets
-		 * - If the number of packets to send is higher than a threshold of 80% of total TX descriptors (which is typically around 400 packets),
-		 * then after reaching this threshold there is a built-in 0.2 sec sleep to let the TX descriptors clean
-		 * <BR><BR>
-		 * @param[in] rawPacketsArr A pointer to an array of MBufRawPacket
+		 * Send an array of raw packets to the network.<BR><BR>
+		 * The sending algorithm works as follows: the algorithm tries to allocate a
+		 * group of mbufs from the device mbuf pool. For each mbuf allocated a raw packet data is copied to the mbuf. This means that 
+		 * the packets sent as input to this method aren't affected (aren't freed, changed, or anything like that). The algorithm will
+		 * continue allocating mbufs until: no more raw packets to send; OR cannot allocate mbufs because mbug pool is empty; OR number
+		 * of allocated mbufs is higher than a threshold of 80% of total TX descriptors. When one of these happen the algorithm will 
+		 * try to send the mbufs it already got through DPDK API. DPDK will free these mbufs after sending them. Then the algorithm will 
+		 * try to allocate mbufs again and send them again until no more raw packets are left to send to send or mbuf allocation failed 
+		 * 3 times in a raw. Raw packets that are bigger than the size of an mbuf or with length 0 will be skipped. Same goes for raw 
+		 * packets whose data could not be copied to the allocated mbuf for some reason. An appropriate error will be printed for 
+		 * each such packet
+		 * @param[in] rawPacketsArr A pointer to an array of raw packets
 		 * @param[in] arrLength The length of the array
 		 * @param[in] txQueueId An optional parameter which indicates to which TX queue the packets will be sent to. The default is
 		 * TX queue 0
-		 * @param[in] useTxBuffer A flag which indicates whether to use TX buffer mechanism or not. To read more about DPDK's
-		 * TX buffer mechanism please refer to DpdkDevice class description. Default value is false (don't use this mechanism)
-		 * @return The number of packets actually and successfully sent. If device is not opened or TX queue isn't open, 0 will be returned.
-		 * Also, if TX buffer is being used and packets are buffered, some or all may not be actually sent
+		 * @return The number of packets successfully sent. If device is not opened or TX queue isn't open, 0 will be returned
 		 */
-		uint16_t sendPackets(MBufRawPacket** rawPacketsArr, uint16_t arrLength, uint16_t txQueueId = 0, bool useTxBuffer = false);
+		int sendPackets(const RawPacket* rawPacketsArr, int arrLength, uint16_t txQueueId = 0);
 
 		/**
-		 * Send an array of parsed packets to the network. Please notice the following:<BR>
-		 * - If some or all of the packets contain raw packets which aren't of type MBufRawPacket, a new temp MBufRawPacket instances
-		 * will be created and packet data will be copied to them. This is necessary to allocate mbufs which will store the data to be sent.
-		 * If performance is a critical factor please make sure you send parsed packets that contain only raw packets of type MBufRawPacket
-		 * - If the number of packets to send is higher than 64 this method will run multiple iterations of sending packets to DPDK, each
-		 * iteration of 64 packets
-		 * - If the number of packets to send is higher than a threshold of 80% of total TX descriptors (which is typically around 400 packets),
-		 * then after reaching this threshold there is a built-in 0.2 sec sleep to let the TX descriptors clean
-		 * <BR><BR>
+		 * Send an array of parsed packets to the network. For the send packets algorithm see sendPackets()
 		 * @param[in] packetsArr A pointer to an array of parsed packet pointers
 		 * @param[in] arrLength The length of the array
 		 * @param[in] txQueueId An optional parameter which indicates to which TX queue the packets will be sent to. The default is
 		 * TX queue 0
-		 * @param[in] useTxBuffer A flag which indicates whether to use TX buffer mechanism or not. To read more about DPDK's
-		 * TX buffer mechanism please refer to DpdkDevice class description. Default value is false (don't use this mechanism)
-		 * @return The number of packets actually and successfully sent. If device is not opened or TX queue isn't open, 0 will be returned.
-		 * Also, if TX buffer is being used and packets are buffered, some or all may not be actually sent
+		 * @return The number of packets successfully sent. If device is not opened or TX queue isn't open, 0 will be returned
 		 */
-		uint16_t sendPackets(Packet** packetsArr, uint16_t arrLength, uint16_t txQueueId = 0, bool useTxBuffer = false);
+		int sendPackets(const Packet** packetsArr, int arrLength, uint16_t txQueueId = 0);
 
 		/**
-		 * Send a vector of MBufRawPacket pointers to the network. Please notice the following:<BR>
-		 * - If the number of packets to send is higher than 64 this method will run multiple iterations of sending packets to DPDK, each
-		 * iteration of 64 packets
-		 * - If the number of packets to send is higher than a threshold of 80% of total TX descriptors (which is typically around 400 packets),
-		 * then after reaching this threshold there is a built-in 0.2 sec sleep to let the TX descriptors clean
-		 * <BR><BR>
+		 * Send a vector of raw packets to the network. For the send packets algorithm see sendPackets()
 		 * @param[in] rawPacketsVec The vector of raw packet
 		 * @param[in] txQueueId An optional parameter which indicates to which TX queue the packets will be sent to. The default is
 		 * TX queue 0
-		 * @param[in] useTxBuffer A flag which indicates whether to use TX buffer mechanism or not. To read more about DPDK's
-		 * TX buffer mechanism please refer to DpdkDevice class description. Default value is false (don't use this mechanism)
-		 * @return The number of packets actually and successfully sent. If device is not opened or TX queue isn't open, 0 will be returned.
-		 * Also, if TX buffer is being used and packets are buffered, some or all may not be actually sent
+		 * @return The number of packets successfully sent. If device is not opened or TX queue isn't open, 0 will be returned
 		 */
-		uint16_t sendPackets(const MBufRawPacketVector& rawPacketsVec, uint16_t txQueueId = 0, bool useTxBuffer = false);
+		int sendPackets(const RawPacketVector& rawPacketsVec, uint16_t txQueueId = 0);
 
 		/**
-		 * Send a vector of RawPacket pointers to the network. Please notice the following:<BR>
-		 * - If some or all of the raw packets aren't of type MBufRawPacket, a new temp MBufRawPacket instances will be created
-		 * and packet data will be copied to them. This is necessary to allocate mbufs which will store the data to be sent. If
-		 * performance is a critical factor please make sure you send only raw packets of type MBufRawPacket (or use the sendPackets overload
-		 * that sends MBufRawPacketVector)
-		 * - If the number of packets to send is higher than 64 this method will run multiple iterations of sending packets to DPDK, each
-		 * iteration of 64 packets
-		 * - If the number of packets to send is higher than a threshold of 80% of total TX descriptors (which is typically around 400 packets),
-		 * then after reaching this threshold there is a built-in 0.2 sec sleep to let the TX descriptors clean
-		 * <BR><BR>
-		 * @param[in] rawPacketsVec The vector of raw packet
-		 * @param[in] txQueueId An optional parameter which indicates to which TX queue the packets will be sent to. The default is
+		 * Send packet raw data to the network. For the send packets algorithm see sendPackets(), but keep in mind this method sends
+		 * only 1 packet
+		 * @param[in] packetData The packet raw data to send
+		 * @param[in] packetDataLength The length of the raw data
+		 * @param[in] txQueueId An optional parameter which indicates to which TX queue the packet will be sent to. The default is
 		 * TX queue 0
-		 * @param[in] useTxBuffer A flag which indicates whether to use TX buffer mechanism or not. To read more about DPDK's
-		 * TX buffer mechanism please refer to DpdkDevice class description. Default value is false (don't use this mechanism)
-		 * @return The number of packets actually and successfully sent. If device is not opened or TX queue isn't open, 0 will be returned.
-		 * Also, if TX buffer is being used and packets are buffered, some or all may not be actually sent
+		 * @return True if packet was sent successfully or false if device is not opened, TX queue isn't opened or the sending algorithm
+		 * failed (for example: couldn't allocate an mbuf or DPDK returned an error)
 		 */
-		uint16_t sendPackets(const RawPacketVector& rawPacketsVec, uint16_t txQueueId = 0, bool useTxBuffer = false);
+		bool sendPacket(const uint8_t* packetData, int packetDataLength, uint16_t txQueueId = 0);
 
 		/**
-		 * Send a raw packet to the network. Please notice that if the raw packet isn't of type MBufRawPacket, a new temp MBufRawPacket
-		 * will be created and the data will be copied to it. This is necessary to allocate an mbuf which will store the data to be sent.
-		 * If performance is a critical factor please make sure you send a raw packet of type MBufRawPacket
+		 * Send a raw packet to the network. For the send packets algorithm see sendPackets(), but keep in mind this method sends
+		 * only 1 packet
 		 * @param[in] rawPacket The raw packet to send
 		 * @param[in] txQueueId An optional parameter which indicates to which TX queue the packet will be sent to. The default is
 		 * TX queue 0
-		 * @param[in] useTxBuffer A flag which indicates whether to use TX buffer mechanism or not. To read more about DPDK's
-		 * TX buffer mechanism please refer to DpdkDevice class description. Default value is false (don't use this mechanism)
-		 * @return True if packet was sent successfully or false if device is not opened, TX queue isn't opened, or if the packet wasn't
-		 * sent for any other reason. Please notice that when using TX buffers the packet may be buffered and not sent immediately, which
-		 * may also result in returning false
+		 * @return True if packet was sent successfully or false if device is not opened, TX queue isn't opened or the sending algorithm
+		 * failed (for example: couldn't allocate an mbuf or DPDK returned an error)
 		 */
-		bool sendPacket(const RawPacket& rawPacket, uint16_t txQueueId = 0, bool useTxBuffer = false);
+		bool sendPacket(const RawPacket& rawPacket, uint16_t txQueueId = 0);
 
 		/**
-		 * Send a MBufRawPacket to the network
-		 * @param[in] rawPacket The MBufRawPacket to send
-		 * @param[in] txQueueId An optional parameter which indicates to which TX queue the packet will be sent to. The default is
-		 * TX queue 0
-		 * @param[in] useTxBuffer A flag which indicates whether to use TX buffer mechanism or not. To read more about DPDK's
-		 * TX buffer mechanism please refer to DpdkDevice class description. Default value is false (don't use this mechanism)
-		 * @return True if packet was sent successfully or false if device is not opened, TX queue isn't opened, or if the packet wasn't
-		 * sent for any other reason. Please notice that when using TX buffers the packet may be buffered and not sent immediately, which
-		 * may also result in returning false
-		 */
-		bool sendPacket(const MBufRawPacket& rawPacket, uint16_t txQueueId = 0, bool useTxBuffer = false);
-
-		/**
-		 * Send a parsed packet to the network
-		 * @param[in] packet The parsed packet to send. Please notice that if the packet contains a raw packet which isn't of type
-		 * MBufRawPacket, a new temp MBufRawPacket will be created and the data will be copied to it. This is necessary to
-		 * allocate an mbuf which will store the data to be sent. If performance is a critical factor please make sure you send a
-		 * parsed packet that contains a raw packet of type MBufRawPacket
+		 * Send a parsed packet to the network. For the send packets algorithm see sendPackets(), but keep in mind this method sends
+		 * only 1 packet
+		 * @param[in] packet The parsed packet to send
 		 * @param[in] txQueueId An optional parameter which indicates to which TX queue the packet will be sent on. The default is
 		 * TX queue 0
-		 * @param[in] useTxBuffer A flag which indicates whether to use TX buffer mechanism or not. To read more about DPDK's
-		 * TX buffer mechanism please refer to DpdkDevice class description. Default value is false (don't use this mechanism)
-		 * @return True if packet was sent successfully or false if device is not opened, TX queue isn't opened, or if the packet wasn't
-		 * sent for any other reason. Please notice that when using TX buffers the packet may be buffered and not sent immediately, which
-		 * may also result in returning false
+		 * @return True if packet was sent successfully or false if device is not opened, TX queue isn't opened or the sending algorithm
+		 * failed (for example: couldn't allocate an mbuf or DPDK returned an error)
 		 */
-		bool sendPacket(const Packet& packet, uint16_t txQueueId = 0, bool useTxBuffer = false);
+		bool sendPacket(const Packet& packet, uint16_t txQueueId = 0);
 
 		/**
 		 * Overridden method from IPcapDevice. __BPF filters are currently not implemented for DpdkDevice__
@@ -901,56 +683,10 @@ namespace pcpp
 		void close();
 
 		/**
-		 * @deprecated
-		 * Please use DpdkDevice::getStatistics(DpdkDeviceStats& stats) instead
+		 * Retrieve RX packet statistics from device
+		 * @todo pcap_stat is a poor struct that doesn't contain all the information DPDK can provide. Consider using a more extensive struct
 		 */
 		void getStatistics(pcap_stat& stats);
-
-		/**
-		 * Retrieve RX/TX statistics from device
-		 * @param[out] stats A reference to a DpdkDeviceStats object where stats will be written into
-		 */
-		void getStatistics(DpdkDeviceStats& stats);
-
-		/**
-		 * Clear device statistics
-		 */
-		void clearStatistics();
-
-		/**
-		 * DPDK supports an option to buffer TX packets and send them only when reaching a certain threshold. This method enables
-		 * the user to flush a TX buffer for certain TX queue and send the packets stored in it (you can read about it here:
-		 * http://dpdk.org/doc/api/rte__ethdev_8h.html#a0e941a74ae1b1b886764bc282458d946). It has the option to flush only
-		 * when timeout that was set in DpdkDeviceConfiguration#flushTxBufferTimeout expired or flush immediately regardless
-		 * of the timeout. The usage of this method can be in the main loop where you can call this method once every a couple
-		 * of iterations to make sure TX buffers are flushed
-		 * @param[in] flushOnlyIfTimeoutExpired When set to true, flush will happen only if the timeout defined in
-		 * DpdkDeviceConfiguration#flushTxBufferTimeout expired. If set to false flush will happen immediately. Default value
-		 * is false
-		 * @param[in] txQueueId The TX queue ID to flush its buffer. Default is 0
-		 * @return The number of packets sent after buffer was flushed
-		 */
-		uint16_t flushTxBuffer(bool flushOnlyIfTimeoutExpired = false, uint16_t txQueueId = 0);
-
-		/**
-		 * Check whether a specific RSS hash function is supported by this device (PMD)
-		 * @param[in] rssHF RSS hash function to check
-		 * @return True if this hash function is supported, false otherwise
-		 */
-		bool isDeviceSupportRssHashFunction(DpdkRssHashFunction rssHF);
-
-		/**
-		 * Check whether a mask of RSS hash functions is supported by this device (PMD)
-		 * @param[in] rssHFMask RSS hash functions mask to check. This mask should be built from values in DpdkRssHashFunction enum
-		 * @return True if all hash functions in this mask are supported, false otherwise
-		 */
-		bool isDeviceSupportRssHashFunction(uint64_t rssHFMask);
-
-		/**
-		 * @return A mask of all RSS hash functions supported by this device (PMD). This mask is built from values in DpdkRssHashFunction enum.
-		 * Value of zero means RSS is not supported by this device
-		 */
-		uint64_t getSupportedRssHashFunctions();
 
 	private:
 
@@ -979,11 +715,8 @@ namespace pcpp
 
 		void setDeviceInfo();
 
-		typedef rte_mbuf* (*packetIterator)(void* packetStorage, int index);
-		uint16_t sendPacketsInner(uint16_t txQueueId, void* packetStorage, packetIterator iter, int arrLength, bool useTxBuffer);
-
-		uint64_t convertRssHfToDpdkRssHf(uint64_t rssHF);
-		uint64_t convertDpdkRssHfToRssHf(uint64_t dpdkRssHF);
+		typedef RawPacket* (*packetIterator)(void* packetStorage, int index);
+		int sendPacketsInner(uint16_t txQueueId, void* packetStorage, packetIterator iter, int arrLength);
 
 		char m_DeviceName[30];
 		DpdkPMDType m_PMDType;
@@ -997,9 +730,6 @@ namespace pcpp
 		uint16_t m_DeviceMtu;
 		struct rte_mempool* m_MBufMempool;
 		struct rte_mbuf* m_mBufArray[256];
-		struct rte_eth_dev_tx_buffer** m_TxBuffers;
-		uint64_t m_TxBufferDrainTsc;
-		uint64_t* m_TxBufferLastDrainTsc;
 		DpdkCoreConfiguration m_CoreConfiguration[MAX_NUM_OF_CORES];
 		uint16_t m_TotalAvailableRxQueues;
 		uint16_t m_TotalAvailableTxQueues;
@@ -1013,8 +743,6 @@ namespace pcpp
 
 		 // RSS key used by the NIC for load balancing the packets between cores
 		static uint8_t m_RSSKey[40];
-
-		DpdkDeviceStats m_PrevStats;
 	};
 
 } // namespace pcpp

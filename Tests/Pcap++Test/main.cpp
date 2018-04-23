@@ -374,24 +374,14 @@ public:
 		PCAPP_DEBUG_PRINT("Worker thread on core %d is starting", m_CoreId);
 
 		m_PacketCount = 0;
-		MBufRawPacket* mBufArr[32] = {};
-
 		while (!m_Stop)
 		{
+			RawPacketVector packetVec;
 			pthread_mutex_lock(m_QueueLock);
-			uint16_t packetReceived = m_DpdkDevice->receivePackets(mBufArr, 32, m_QueueId);
+			bool res = m_DpdkDevice->receivePackets(packetVec, m_QueueId);
 			pthread_mutex_unlock(m_QueueLock);
-			m_PacketCount += packetReceived;
-			pthread_mutex_lock(m_QueueLock);
-			uint16_t packetsSent = m_DpdkDevice->sendPackets(mBufArr, packetReceived, m_QueueId);
-			PCAPP_ASSERT(packetsSent == packetReceived, "Couldn't send all received packets on thread %d", m_CoreId);
-			pthread_mutex_unlock(m_QueueLock);
-		}
-
-		for (int i = 0; i < 32; i++)
-		{
-			if (mBufArr[i] != NULL)
-				delete mBufArr[i];
+			PCAPP_ASSERT(res == true, "Couldn't receive packets on thread %d", m_CoreId);
+			m_PacketCount += packetVec.size();
 		}
 
 		PCAPP_DEBUG_PRINT("Worker thread on %d stopped", m_CoreId);
@@ -2926,23 +2916,6 @@ PCAPP_TEST(TestDpdkDevice)
 //	PCAPP_ASSERT(dev->getMtu() == newMtu, "MTU isn't properly set");
 //	PCAPP_ASSERT(dev->setMtu(origMtu) == true, "Couldn't set MTU back to original");
 
-	if (dev->getPMDName() == "net_e1000_em")
-	{
-		uint64_t rssHF = 0;
-		PCAPP_ASSERT(dev->isDeviceSupportRssHashFunction(rssHF) == true, "Not all RSS hash function are supported for pmd net_e1000_em");
-		PCAPP_ASSERT(dev->getSupportedRssHashFunctions() == rssHF, "RSS hash functions supported by device is different than expected");
-	}
-	else if (dev->getPMDName() == "net_vmxnet3")
-	{
-		uint64_t rssHF = DpdkDevice::RSS_IPV4 | \
-				DpdkDevice::RSS_NONFRAG_IPV4_TCP | \
-				DpdkDevice::RSS_IPV6 | \
-				DpdkDevice::RSS_NONFRAG_IPV6_TCP;
-
-		PCAPP_ASSERT(dev->isDeviceSupportRssHashFunction(rssHF) == true, "Not all RSS hash function are supported for pmd vmxnet3");
-		PCAPP_ASSERT(dev->getSupportedRssHashFunctions() == rssHF, "RSS hash functions supported by device is different than expected");
-	}
-
 	PCAPP_ASSERT(dev->open() == true, "Cannot open DPDK device");
 	LoggerPP::getInstance().supressErrors();
 	PCAPP_ASSERT(dev->open() == false, "Managed to open the device twice");
@@ -2969,25 +2942,21 @@ PCAPP_TEST(TestDpdkDevice)
 	PCAPP_DEBUG_PRINT("UDP packets: %d", packetData.UdpCount);
 	PCAPP_DEBUG_PRINT("HTTP packets: %d", packetData.HttpCount);
 
-	DpdkDevice::DpdkDeviceStats stats;
+	pcap_stat stats;
+	stats.ps_recv = 0;
+	stats.ps_drop = 0;
+	stats.ps_ifdrop = 0;
 	dev->getStatistics(stats);
-	PCAPP_DEBUG_PRINT("Packets captured according to stats: %lu", stats.aggregatedRxStats.packets);
-	PCAPP_DEBUG_PRINT("Bytes captured according to stats: %lu", stats.aggregatedRxStats.bytes);
-	PCAPP_DEBUG_PRINT("Packets dropped according to stats: %lu", stats.rxPacketsDropeedByHW);
-	PCAPP_DEBUG_PRINT("Erroneous packets according to stats: %lu", stats.rxErroneousPackets);
-	for (int i = 0; i < DPDK_MAX_RX_QUEUES; i++)
-	{
-		PCAPP_DEBUG_PRINT("Packets captured on RX queue #%d according to stats: %lu", i, stats.rxStats[i].packets);
-		PCAPP_DEBUG_PRINT("Bytes captured on RX queue #%d according to stats: %lu", i, stats.rxStats[i].bytes);
+	PCAPP_DEBUG_PRINT("Packets captured according to stats: %d", stats.ps_recv);
+	PCAPP_DEBUG_PRINT("Packets dropped according to stats: %d", stats.ps_drop);
 
-	}
 	PCAPP_ASSERT_AND_RUN_COMMAND(packetData.PacketCount > 0, dev->close(), "No packets were captured");
 	PCAPP_ASSERT_AND_RUN_COMMAND(packetData.ThreadId != -1, dev->close(), "Couldn't retrieve thread ID");
 
-	int statsVsPacketCount = stats.aggregatedRxStats.packets > (uint64_t)packetData.PacketCount ? stats.aggregatedRxStats.packets-(uint64_t)packetData.PacketCount : (uint64_t)packetData.PacketCount-stats.aggregatedRxStats.packets;
+	int statsVsPacketCount = stats.ps_recv > (uint32_t)packetData.PacketCount ? stats.ps_recv-(uint32_t)packetData.PacketCount : (uint32_t)packetData.PacketCount-stats.ps_recv;
 	PCAPP_ASSERT_AND_RUN_COMMAND(statsVsPacketCount <= 20, dev->close(),
-			"Stats received packet count (%lu) is different than calculated packet count (%d)",
-			stats.aggregatedRxStats.packets,
+			"Stats received packet count (%d) is different than calculated packet count (%d)",
+			stats.ps_recv,
 			packetData.PacketCount);
 	dev->close();
 	dev->close();
@@ -3070,7 +3039,11 @@ PCAPP_TEST(TestDpdkMultiThread)
 	PCAPP_ASSERT_AND_RUN_COMMAND(dev->startCaptureMultiThreads(dpdkPacketsArriveMultiThread, packetDataMultiThread, coreMask), dev->close(), "Cannot start capturing on multi threads");
 	PCAP_SLEEP(20);
 	dev->stopCapture();
-	uint64_t packetCount = 0;
+	pcap_stat aggrStats;
+	aggrStats.ps_recv = 0;
+	aggrStats.ps_drop = 0;
+	aggrStats.ps_ifdrop = 0;
+
 
 	for (int i = 0; i < getNumOfCores(); i++)
 	{
@@ -3085,25 +3058,17 @@ PCAPP_TEST(TestDpdkMultiThread)
 		PCAPP_DEBUG_PRINT("IPv6 packets: %d", packetDataMultiThread[i].Ip6Count);
 		PCAPP_DEBUG_PRINT("TCP packets: %d", packetDataMultiThread[i].TcpCount);
 		PCAPP_DEBUG_PRINT("UDP packets: %d", packetDataMultiThread[i].UdpCount);
-		packetCount += packetDataMultiThread[i].PacketCount;
+		aggrStats.ps_recv += packetDataMultiThread[i].PacketCount;
 	}
 
-	PCAPP_ASSERT_AND_RUN_COMMAND(packetCount > 0, dev->close(), "No packets were captured on any thread");
+	PCAPP_ASSERT_AND_RUN_COMMAND(aggrStats.ps_recv > 0, dev->close(), "No packets were captured on any thread");
 
-	DpdkDevice::DpdkDeviceStats stats;
+	pcap_stat stats;
 	dev->getStatistics(stats);
-	PCAPP_DEBUG_PRINT("Packets captured according to stats: %lu", stats.aggregatedRxStats.packets);
-	PCAPP_DEBUG_PRINT("Bytes captured according to stats: %lu", stats.aggregatedRxStats.bytes);
-	PCAPP_DEBUG_PRINT("Packets dropped according to stats: %lu", stats.rxPacketsDropeedByHW);
-	PCAPP_DEBUG_PRINT("Erroneous packets according to stats: %lu", stats.rxErroneousPackets);
-	for (int i = 0; i < DPDK_MAX_RX_QUEUES; i++)
-	{
-		PCAPP_DEBUG_PRINT("Packets captured on RX queue #%d according to stats: %lu", i, stats.rxStats[i].packets);
-		PCAPP_DEBUG_PRINT("Bytes captured on RX queue #%d according to stats: %lu", i, stats.rxStats[i].bytes);
-
-	}
-	PCAPP_ASSERT_AND_RUN_COMMAND(stats.aggregatedRxStats.packets >= packetCount, dev->close(), "Statistics from device differ from aggregated statistics on all threads");
-	PCAPP_ASSERT_AND_RUN_COMMAND(stats.rxPacketsDropeedByHW == 0, dev->close(), "Some packets were dropped");
+	PCAPP_DEBUG_PRINT("Packets captured according to stats: %d", stats.ps_recv);
+	PCAPP_DEBUG_PRINT("Packets dropped according to stats: %d", stats.ps_drop);
+	PCAPP_ASSERT_AND_RUN_COMMAND(stats.ps_recv >= aggrStats.ps_recv, dev->close(), "Statistics from device differ from aggregated statistics on all threads");
+	PCAPP_ASSERT_AND_RUN_COMMAND(stats.ps_drop == 0, dev->close(), "Some packets were dropped");
 
 	for (int firstCoreId = 0; firstCoreId < getNumOfCores(); firstCoreId++)
 	{
@@ -3195,43 +3160,48 @@ PCAPP_TEST(TestDpdkDeviceSendPackets)
     PcapFileReaderDevice fileReaderDev(EXAMPLE_PCAP_PATH);
     PCAPP_ASSERT(fileReaderDev.open(), "Cannot open file reader device");
 
+    RawPacket rawPacketArr[10000];
     PointerVector<Packet> packetVec;
     RawPacketVector rawPacketVec;
-    Packet* packetArr[10000];
-    uint16_t packetsRead = 0;
-    RawPacket rawPacket;
-    while(fileReaderDev.getNextPacket(rawPacket))
+    const Packet* packetArr[10000];
+    int packetsRead = 0;
+    while(fileReaderDev.getNextPacket(rawPacketArr[packetsRead]))
     {
-    	if (packetsRead == 100)
-    		break;
-    	RawPacket* newRawPacket = new RawPacket(rawPacket);
-    	rawPacketVec.pushBack(newRawPacket);
-    	Packet* newPacket = new Packet(newRawPacket, false);
-    	packetVec.pushBack(newPacket);
-    	packetArr[packetsRead] = newPacket;
-
+    	packetVec.pushBack(new Packet(&rawPacketArr[packetsRead]));
+    	rawPacketVec.pushBack(new RawPacket(rawPacketArr[packetsRead]));
       	packetsRead++;
     }
 
-    //send packets as parsed EthPacekt array
+    //send packets as RawPacket array
     int freeMBufsBefore = dev->getAmountOfFreeMbufs();
-    int packetsSentAsParsed = dev->sendPackets(packetArr, packetsRead);
+    int packetsSentAsRaw = dev->sendPackets(rawPacketArr, packetsRead);
     int freeMBufsAfter = dev->getAmountOfFreeMbufs();
-    PCAPP_ASSERT(freeMBufsBefore == freeMBufsAfter, "MBuf leakage happened in sending EthPacekt array. Free MBufs before/after: %d/%d", freeMBufsBefore, freeMBufsAfter);
+    PCAPP_ASSERT(freeMBufsBefore == freeMBufsAfter, "MBuf leakage happened in sending RawPacket array");
+
+    //send packets as parsed EthPacekt array
+    std::copy(packetVec.begin(), packetVec.end(), packetArr);
+    freeMBufsBefore = dev->getAmountOfFreeMbufs();
+    int packetsSentAsParsed = dev->sendPackets(packetArr, packetsRead);
+    freeMBufsAfter = dev->getAmountOfFreeMbufs();
+    PCAPP_ASSERT(freeMBufsBefore == freeMBufsAfter, "MBuf leakage happened in sending EthPacekt array");
 
     //send packets are RawPacketVector
     freeMBufsBefore = dev->getAmountOfFreeMbufs();
     int packetsSentAsRawVector = dev->sendPackets(rawPacketVec);
     freeMBufsAfter = dev->getAmountOfFreeMbufs();
-    PCAPP_ASSERT(freeMBufsBefore == freeMBufsAfter, "MBuf leakage happened in sending RawPacketVector. Free MBufs before/after: %d/%d", freeMBufsBefore, freeMBufsAfter);
+    PCAPP_ASSERT(freeMBufsBefore == freeMBufsAfter, "MBuf leakage happened in sending RawPacketVector");
 
+    PCAPP_ASSERT(packetsSentAsRaw == packetsRead, "Not all packets were sent as raw. Expected (read from file): %d; Sent: %d", packetsRead, packetsSentAsRaw);
     PCAPP_ASSERT(packetsSentAsParsed == packetsRead, "Not all packets were sent as parsed. Expected (read from file): %d; Sent: %d", packetsRead, packetsSentAsParsed);
     PCAPP_ASSERT(packetsSentAsRawVector == packetsRead, "Not all packets were sent as raw vector. Expected (read from file): %d; Sent: %d", packetsRead, packetsSentAsRawVector);
 
     if (dev->getTotalNumOfTxQueues() > 1)
     {
+        packetsSentAsRaw = dev->sendPackets(rawPacketArr, packetsRead, dev->getTotalNumOfTxQueues()-1);
         packetsSentAsParsed = dev->sendPackets(packetArr, packetsRead, dev->getTotalNumOfTxQueues()-1);
         packetsSentAsRawVector = dev->sendPackets(rawPacketVec, dev->getTotalNumOfTxQueues()-1);
+        PCAPP_ASSERT(packetsSentAsRaw == packetsRead, "Not all packets were sent as raw to TX queue %d. Expected (read from file): %d; Sent: %d",
+        		dev->getTotalNumOfTxQueues()-1, packetsRead, packetsSentAsRaw);
         PCAPP_ASSERT(packetsSentAsParsed == packetsRead, "Not all packets were sent as parsed to TX queue %d. Expected (read from file): %d; Sent: %d",
         		dev->getTotalNumOfTxQueues()-1, packetsRead, packetsSentAsParsed);
         PCAPP_ASSERT(packetsSentAsRawVector == packetsRead, "Not all packets were sent as raw vector to TX queue %d. Expected (read from file): %d; Sent: %d",
@@ -3240,12 +3210,12 @@ PCAPP_TEST(TestDpdkDeviceSendPackets)
     }
 
     LoggerPP::getInstance().supressErrors();
-    PCAPP_ASSERT(dev->sendPackets(rawPacketVec, dev->getTotalNumOfTxQueues()+1) == 0, "Managed to send packets on TX queue that doesn't exist");
+    PCAPP_ASSERT(dev->sendPackets(rawPacketArr, packetsRead, dev->getTotalNumOfTxQueues()+1) == 0, "Managed to send packets on TX queue that doesn't exist");
     LoggerPP::getInstance().enableErrors();
 
     freeMBufsBefore = dev->getAmountOfFreeMbufs();
-    PCAPP_ASSERT(dev->sendPacket(rawPacketVec.at(packetsRead/3), 0) == true, "Couldn't send 1 raw packet");
-    PCAPP_ASSERT(dev->sendPacket(*(packetArr[packetsRead/2]), 0) == true, "Couldn't send 1 parsed packet");
+    PCAPP_ASSERT(dev->sendPacket(rawPacketArr[2000], 0) == true, "Couldn't send 1 raw packet");
+    PCAPP_ASSERT(dev->sendPacket(*(packetArr[3000]), 0) == true, "Couldn't send 1 parsed packet");
     freeMBufsAfter = dev->getAmountOfFreeMbufs();
     PCAPP_ASSERT(freeMBufsBefore == freeMBufsAfter, "MBuf leakage happened in sending one packet");
 
@@ -3276,29 +3246,53 @@ PCAPP_TEST(TestDpdkDeviceWorkerThreads)
 	DpdkDevice* dev = DpdkDeviceList::getInstance().getDeviceByPort(args.dpdkPort);
 	PCAPP_ASSERT(dev != NULL, "DpdkDevice is NULL");
 
-	MBufRawPacketVector rawPacketVec;
-	MBufRawPacket* mBufRawPacketArr[32] = {};
-	size_t mBufRawPacketArrLen = 32;
-	Packet* packetArr[32] = {};
-	size_t packetArrLen = 32;
+	RawPacketVector rawPacketVec;
+	MBufRawPacket* mBufRawPacketArr = NULL;
+	int mBufRawPacketArrLen = 0;
+	Packet* packetArr = NULL;
+	int packetArrLen = 0;
 
 	LoggerPP::getInstance().supressErrors();
-	PCAPP_ASSERT(dev->receivePackets(rawPacketVec, 0) == 0, "Managed to receive packets although device isn't opened");
-	PCAPP_ASSERT(dev->receivePackets(packetArr, packetArrLen, 0) == 0, "Managed to receive packets although device isn't opened");
-	PCAPP_ASSERT(dev->receivePackets(mBufRawPacketArr, mBufRawPacketArrLen, 0) == 0, "Managed to receive packets although device isn't opened");
+	PCAPP_ASSERT(dev->receivePackets(rawPacketVec, 0) == false, "Managed to receive packets although device isn't opened");
+	PCAPP_ASSERT(dev->receivePackets(&packetArr, packetArrLen, 0) == false, "Managed to receive packets although device isn't opened");
+	PCAPP_ASSERT(dev->receivePackets(&mBufRawPacketArr, mBufRawPacketArrLen, 0) == false, "Managed to receive packets although device isn't opened");
 
 	PCAPP_ASSERT(dev->open() == true, "Couldn't open DPDK device");
-	PCAPP_ASSERT(dev->receivePackets(rawPacketVec, dev->getTotalNumOfRxQueues()+1) == 0, "Managed to receive packets for RX queue that doesn't exist");
-	PCAPP_ASSERT(dev->receivePackets(packetArr, packetArrLen, dev->getTotalNumOfRxQueues()+1) == 0, "Managed to receive packets for RX queue that doesn't exist");
-	PCAPP_ASSERT(dev->receivePackets(mBufRawPacketArr, mBufRawPacketArrLen, dev->getTotalNumOfRxQueues()+1) == 0, "Managed to receive packets for RX queue that doesn't exist");
+	PCAPP_ASSERT(dev->receivePackets(rawPacketVec, dev->getTotalNumOfRxQueues()+1) == false, "Managed to receive packets for RX queue that doesn't exist");
+	PCAPP_ASSERT(dev->receivePackets(&packetArr, packetArrLen, dev->getTotalNumOfRxQueues()+1) == false, "Managed to receive packets for RX queue that doesn't exist");
+	PCAPP_ASSERT(dev->receivePackets(&mBufRawPacketArr, mBufRawPacketArrLen, dev->getTotalNumOfRxQueues()+1) == false, "Managed to receive packets for RX queue that doesn't exist");
+
+	{
+		int myArraySize = 4 * 64; // 4 * RX_BURST_SIZE must be enough
+		int newArraySize = myArraySize;
+		MBufRawPacket* mBufRawPacketArrToReuse = new MBufRawPacket[myArraySize];
+		MBufRawPacket* ptrCopy = mBufRawPacketArrToReuse;
+		dev->receivePackets(&mBufRawPacketArrToReuse, newArraySize, 0, true);
+		if (newArraySize)
+		{
+			bool integrity = true;
+			for (size_t i = 0; i < (size_t)newArraySize; ++i)
+			{
+				integrity &= mBufRawPacketArrToReuse[i].isPacketSet();
+			}
+			PCAPP_ASSERT_AND_RUN_COMMAND(integrity == true,
+				delete[] ptrCopy,
+				"Some packets in reused MbufRawPacket array are not set but reported as if they are.");
+		}
+		else
+		{
+			PCAPP_ASSERT_AND_RUN_COMMAND(mBufRawPacketArrToReuse != NULL, 
+				delete[] ptrCopy,
+				"Memory leak have happened during reuse of MbufRawPacket array.");
+		}
+		delete[] ptrCopy;
+	}
 
 	DpdkPacketData packetData;
-	mBufRawPacketArrLen = 32;
-	packetArrLen = 32;
 	PCAPP_ASSERT_AND_RUN_COMMAND(dev->startCaptureSingleThread(dpdkPacketsArrive, &packetData), dev->close(), "Could not start capturing on DpdkDevice");
-	PCAPP_ASSERT(dev->receivePackets(rawPacketVec, 0) == 0, "Managed to receive packets although device is in capture mode");
-	PCAPP_ASSERT(dev->receivePackets(packetArr, packetArrLen, 0) == 0, "Managed to receive packets although device is in capture mode");
-	PCAPP_ASSERT(dev->receivePackets(mBufRawPacketArr, mBufRawPacketArrLen, 0) == 0, "Managed to receive packets although device is in capture mode");
+	PCAPP_ASSERT(dev->receivePackets(rawPacketVec, 0) == false, "Managed to receive packets although device is in capture mode");
+	PCAPP_ASSERT(dev->receivePackets(&packetArr, packetArrLen, 0) == false, "Managed to receive packets although device is in capture mode");
+	PCAPP_ASSERT(dev->receivePackets(&mBufRawPacketArr, mBufRawPacketArrLen, 0) == false, "Managed to receive packets although device is in capture mode");
 	LoggerPP::getInstance().enableErrors();
 	dev->stopCapture();
 	dev->close();
@@ -3308,7 +3302,7 @@ PCAPP_TEST(TestDpdkDeviceWorkerThreads)
 	int numOfAttempts = 0;
 	while (numOfAttempts < 10)
 	{
-		dev->receivePackets(rawPacketVec, 0);
+		PCAPP_ASSERT(dev->receivePackets(rawPacketVec, 0) == true, "Couldn't receive packets");
 		PCAP_SLEEP(1);
 		if (rawPacketVec.size() > 0)
 			break;
@@ -3321,40 +3315,30 @@ PCAPP_TEST(TestDpdkDeviceWorkerThreads)
 	numOfAttempts = 0;
 	while (numOfAttempts < 10)
 	{
-		mBufRawPacketArrLen = dev->receivePackets(mBufRawPacketArr, 32, 0);
+		PCAPP_ASSERT(dev->receivePackets(&mBufRawPacketArr, mBufRawPacketArrLen, 0) == true, "Couldn't receive packets");
 		PCAP_SLEEP(1);
-		if (mBufRawPacketArrLen > 0)
+		if (mBufRawPacketArrLen > 0 && mBufRawPacketArr != NULL)
 			break;
 		numOfAttempts++;
 	}
 
 	PCAPP_ASSERT(numOfAttempts < 10, "No packets were received using mBuf raw packet arr");
-	PCAPP_DEBUG_PRINT("Captured %d packets in %d attempts using mBuf raw packet arr", (int)mBufRawPacketArrLen, numOfAttempts);
-	for (int i = 0; i < 32; i++)
-	{
-		if (mBufRawPacketArr[i] != NULL)
-			delete mBufRawPacketArr[i];
-	}
-
+	PCAPP_DEBUG_PRINT("Captured %d packets in %d attempts using mBuf raw packet arr", mBufRawPacketArrLen, numOfAttempts);
+	delete [] mBufRawPacketArr;
 
 	numOfAttempts = 0;
 	while (numOfAttempts < 10)
 	{
-		packetArrLen = dev->receivePackets(packetArr, 32, 0);
+		PCAPP_ASSERT(dev->receivePackets(&packetArr, packetArrLen, 0) == true, "Couldn't receive packets");
 		PCAP_SLEEP(1);
-		if (packetArrLen > 0)
+		if (packetArrLen > 0 && packetArr != NULL)
 			break;
 		numOfAttempts++;
 	}
 
 	PCAPP_ASSERT(numOfAttempts < 10, "No packets were received using packet arr");
-	PCAPP_DEBUG_PRINT("Captured %d packets in %d attempts using packet arr", (int)packetArrLen, numOfAttempts);
-	for (int i = 0; i < 32; i++)
-	{
-		if (packetArr[i] != NULL)
-			delete packetArr[i];
-	}
-
+	PCAPP_DEBUG_PRINT("Captured %d packets in %d attempts using packet arr", packetArrLen, numOfAttempts);
+	delete [] packetArr;
 
 	int numOfRxQueues = dev->getTotalNumOfRxQueues();
 	pthread_mutex_t queueMutexArr[numOfRxQueues];
@@ -3384,26 +3368,7 @@ PCAPP_TEST(TestDpdkDeviceWorkerThreads)
 	PCAPP_ASSERT(devList.startDpdkWorkerThreads(workerThreadCoreMask, workerThreadVec) == true, "Couldn't start DPDK worker threads");
 	PCAPP_DEBUG_PRINT("Worker threads started");
 
-	for (int i = 0; i < 10; i++)
-	{
-		DpdkDevice::DpdkDeviceStats stats;
-		dev->getStatistics(stats);
-		PCAPP_DEBUG_PRINT("Packets captured   : %lu", stats.aggregatedRxStats.packets);
-		PCAPP_DEBUG_PRINT("Bytes captured     : %lu", stats.aggregatedRxStats.bytes);
-		PCAPP_DEBUG_PRINT("Bits per second    : %lu", stats.aggregatedRxStats.bytesPerSec*8);
-		PCAPP_DEBUG_PRINT("Packets per second : %lu", stats.aggregatedRxStats.packetsPerSec);
-		PCAPP_DEBUG_PRINT("Packets dropped    : %lu", stats.rxPacketsDropeedByHW);
-		PCAPP_DEBUG_PRINT("Erroneous packets  : %lu", stats.rxErroneousPackets);
-		for (int i = 0; i < DPDK_MAX_RX_QUEUES; i++)
-		{
-			PCAPP_DEBUG_PRINT("Packets captured on RX queue #%d according to stats: %lu", i, stats.rxStats[i].packets);
-			PCAPP_DEBUG_PRINT("Bytes captured on RX queue #%d according to stats: %lu", i, stats.rxStats[i].bytes);
-
-		}
-
-		PCAP_SLEEP(1);
-	}
-
+	PCAP_SLEEP(10);
 
 	PCAPP_DEBUG_PRINT("Worker threads stopping");
 	devList.stopDpdkWorkerThreads();
@@ -3490,8 +3455,7 @@ PCAPP_TEST(TestDpdkMbufRawPacket)
 		if (packet.isPacketOfType(VLAN))
 			vlanCount++;
 
-		if (numOfPackets < 100)
-			PCAPP_ASSERT(dev->sendPacket(packet, 0) == true, "Couldn't send packet");
+		PCAPP_ASSERT(dev->sendPacket(packet, 0) == true, "Couldn't send packet");
 	}
 
 	PCAPP_ASSERT(numOfPackets == 4709, "Wrong num of packets read. Expected 4709 got %d", numOfPackets);
@@ -3505,16 +3469,16 @@ PCAPP_TEST(TestDpdkMbufRawPacket)
 
 	// Test save MBufRawPacket to PCAP
 	// -------------------------------
-	MBufRawPacketVector rawPacketVec;
+	RawPacketVector rawPacketVec;
 	int numOfAttempts = 0;
 	while (numOfAttempts < 30)
 	{
 		bool foundTcpOrUdpPacket = false;
 		for (int i = 0; i < dev->getNumOfOpenedRxQueues(); i++)
 		{
-			dev->receivePackets(rawPacketVec, 0);
+			PCAPP_ASSERT(dev->receivePackets(rawPacketVec, 0) == true, "Couldn't receive packets");
 			PCAP_SLEEP(1);
-			for (MBufRawPacketVector::VectorIterator iter = rawPacketVec.begin(); iter != rawPacketVec.end(); iter++)
+			for (RawPacketVector::VectorIterator iter = rawPacketVec.begin(); iter != rawPacketVec.end(); iter++)
 			{
 				Packet packet(*iter);
 				if ((packet.isPacketOfType(TCP) || packet.isPacketOfType(UDP)) && packet.isPacketOfType(IPv4))
@@ -3535,10 +3499,7 @@ PCAPP_TEST(TestDpdkMbufRawPacket)
 
 	PcapFileWriterDevice writer(DPDK_PCAP_WRITE_PATH);
 	PCAPP_ASSERT(writer.open() == true, "Couldn't open pcap writer");
-	for (MBufRawPacketVector::VectorIterator iter = rawPacketVec.begin(); iter != rawPacketVec.end(); iter++)
-	{
-		PCAPP_ASSERT(writer.writePacket(**iter) == true, "Couldn't write raw packets to file");
-	}
+	PCAPP_ASSERT(writer.writePackets(rawPacketVec) == true, "Couldn't write raw packets to file");
 	writer.close();
 
 	PcapFileReaderDevice reader2(DPDK_PCAP_WRITE_PATH);
@@ -3555,7 +3516,7 @@ PCAPP_TEST(TestDpdkMbufRawPacket)
 	// ------------------------
 
 	MBufRawPacket* rawPacketToManipulate = NULL;
-	for (MBufRawPacketVector::VectorIterator iter = rawPacketVec.begin(); iter != rawPacketVec.end(); iter++)
+	for (RawPacketVector::VectorIterator iter = rawPacketVec.begin(); iter != rawPacketVec.end(); iter++)
 	{
 		Packet packet(*iter);
 		if ((packet.isPacketOfType(TCP) || packet.isPacketOfType(UDP)) && packet.isPacketOfType(IPv4))

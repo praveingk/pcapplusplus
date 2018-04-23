@@ -24,7 +24,6 @@ namespace pcpp
 	{
 		UndefinedLogModule,
 		CommonLogModuleIpUtils, ///< IP Utils module (Common++)
-		CommonLogModuleTablePrinter, ///< Table printer module (Common++)
 		PacketLogModuleRawPacket, ///< RawPacket module (Packet++)
 		PacketLogModulePacket, ///< Packet module (Packet++)
 		PacketLogModuleLayer, ///< Layer module (Packet++)
@@ -39,6 +38,7 @@ namespace pcpp
 		PacketLogModuleHttpLayer, ///< HttpLayer module (Packet++)
 		PacketLogModulePPPoELayer, ///< PPPoELayer module (Packet++)
 		PacketLogModuleDnsLayer, ///< DnsLayer module (Packet++)
+		PacketLogModuleQmetadataLayer, ///< Qmetadata module (Packet++)
 		PacketLogModuleMplsLayer, ///< MplsLayer module (Packet++)
 		PacketLogModuleIcmpLayer, ///< IcmpLayer module (Packet++)
 		PacketLogModuleGreLayer, ///< GreLayer module (Packet++)
