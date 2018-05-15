@@ -44,7 +44,7 @@
  *    - In addition PcapPlusPlus provides a shell script to initialize DPDK prerequisites: setup-dpdk.sh. This is an easy-to-use script
  *      that sets up huge-pages, loads DPDK kernel module and sets up the NICs that will be used by DPDK. This script must run before an
  *      application that uses DPDK runs. If you forgot to run it the application will fail with an appropriate error that will remind
- * 
+ *
  * DPDK initialization using PcapPlusPlus:
  *    - Before application runs: run the setup-dpdk.sh script
  *    - On application startup call DpdkDeviceList#initDpdk() static method to initialize DPDK infrastructure and DpdkDevice instances
@@ -115,9 +115,9 @@ namespace pcpp
 	/**
 	 * @class MBufRawPacket
 	 * A class that inherits RawPacket and wraps DPDK's mbuf object (see some info about mbuf in DpdkDevice.h) but is
-	 * compatible with PcapPlusPlus framework. Using MBufRawPacket is be almost similar to using RawPacket, the implementation 
-	 * differences are encapsulated in the class implementation. For example: user can create and manipulate a Packet object from 
-	 * MBufRawPacket the same way it is done with RawPacket; User can use PcapFileWriterDevice to save MBufRawPacket to pcap the 
+	 * compatible with PcapPlusPlus framework. Using MBufRawPacket is be almost similar to using RawPacket, the implementation
+	 * differences are encapsulated in the class implementation. For example: user can create and manipulate a Packet object from
+	 * MBufRawPacket the same way it is done with RawPacket; User can use PcapFileWriterDevice to save MBufRawPacket to pcap the
 	 * same way it's used with RawPacket; etc.<BR>
 	 * The main difference is that RawPacket contains a pointer to the data itself and MBufRawPacket is holding a pointer to an mbuf
 	 * object which contains a pointer to the data. This implies that MBufRawPacket without an mbuf allocated to it is not usable.
@@ -126,7 +126,7 @@ namespace pcpp
 	 *      MBufRawPacket
 	 *    - Creating MBufRawPacket from scratch (in order to send it with DpdkDevice, for example). In this case the user should call
 	 *      the init() method after constructing the object in order to allocate a new mbuf from DPDK port pool (encapsulated by DpdkDevice)
-	 * 
+	 *
 	 * Limitations of this class:
 	 *    - Currently chained mbufs are not supported. An mbuf has the capability to be linked to another mbuf and create a linked list
 	 *      of mbufs. This is good for Jumbo packets or other uses. MBufRawPacket doesn't support this capability so there is no way to
@@ -317,11 +317,11 @@ namespace pcpp
 	 * DPDK port (DpdkDevice) with a single or multiple RX and TX queues. When receiving packets the user can decide from which RX queue
 	 * to read from, and when transmitting packets the user can decide to which TX queue to send them to. RX/TX queues are configured
 	 * when opening the DpdkDevice (see openMultiQueues())<BR>
-	 * 
+	 *
 	 * __Capturing packets__: there are two ways to capture packets using DpdkDevice:
 	 *    - using worker threads (see DpdkDeviceList#startDpdkWorkerThreads() ). When using this method the worker should use the
 	 *      DpdkDevice#receivePackets() methods to get packets from the DpdkDevice
-	 *    - by setting a callback which is invoked each time a burst of packets arrives. For more details see 
+	 *    - by setting a callback which is invoked each time a burst of packets arrives. For more details see
 	 *      DpdkDevice#startCaptureSingleThread()
 	 *
 	 * __Sending packets:__ DpdkDevice has various methods for sending packets. They enable sending raw packets, parsed packets, etc.
@@ -332,7 +332,7 @@ namespace pcpp
 	 * packets<BR>
 	 *
 	 * __Known limitations:__
-	 *    - BPF filters are currently not supported by this device (as opposed to other PcapPlusPlus device types. This means that the 
+	 *    - BPF filters are currently not supported by this device (as opposed to other PcapPlusPlus device types. This means that the
 	 *      device cannot filter packets before they get to the user
 	 *    - It's not possible to set or change NIC load-balancing method. DPDK provides this capability but it's still not
 	 *      supported by DpdkDevice
@@ -345,7 +345,7 @@ namespace pcpp
 
 		/**
 		 * @struct DpdkDeviceConfiguration
-		 * A struct that contains user configurable parameters for opening a DpdkDevice. All of these parameters have default values so 
+		 * A struct that contains user configurable parameters for opening a DpdkDevice. All of these parameters have default values so
 		 * the user doesn't have to use these parameters or understand exactly what is their effect
 		 */
 		struct DpdkDeviceConfiguration
@@ -383,12 +383,12 @@ namespace pcpp
 		struct LinkStatus
 		{
 			/** Enum for describing link duplex */
-			enum LinkDuplex 
+			enum LinkDuplex
 			{
 				/** Full duplex */
-				FULL_DUPLEX, 
+				FULL_DUPLEX,
 				/** Half duplex */
-				HALF_DUPLEX 
+				HALF_DUPLEX
 			};
 
 			/** True if link is up, false if it's down */
@@ -499,7 +499,7 @@ namespace pcpp
 		 * @param[out] rawPacketArrLength The length of MBufRawPacket pointers array will be written into
 		 * @param[in] rxQueueId The RX queue to receive packets from
 		 * @param[in] reuse Signifies that *rawPacketsArr already contains an array of MBufRawPacket objects with length equals to rawPacketArrLength. If provided
-		 * array is big enough to store the burst of packets received from NIC it will not be reallocated, otherwise it will. During the reallocation provided 
+		 * array is big enough to store the burst of packets received from NIC it will not be reallocated, otherwise it will. During the reallocation provided
 		 * array will be freed using delete[] expression so you must allocate it with new[] expression.
 		 * @return True if packets were received and no error occurred or false if device isn't opened, if device is currently in capture mode
 		 * (using startCaptureSingleThread() or startCaptureMultiThreads() ), if rxQueueId doesn't exist on device, or if DPDK receive packets method returned
@@ -518,19 +518,20 @@ namespace pcpp
 		 * (using startCaptureSingleThread() or startCaptureMultiThreads() ), if rxQueueId doesn't exist on device, or if DPDK receive packets method returned
 		 * an error
 		 */
-		bool receivePackets(Packet** packetsArr, int& packetsArrLength, uint16_t rxQueueId);
+		 	bool receivePackets(Packet** packetsArr, int& packetsArrLength, uint16_t rxQueueId);
+		bool receivePackets(Packet** packetsArr, int& packetsArrLength, uint16_t rxQueueId, struct timespec* tsp);
 
 		/**
 		 * Send an array of raw packets to the network.<BR><BR>
 		 * The sending algorithm works as follows: the algorithm tries to allocate a
-		 * group of mbufs from the device mbuf pool. For each mbuf allocated a raw packet data is copied to the mbuf. This means that 
+		 * group of mbufs from the device mbuf pool. For each mbuf allocated a raw packet data is copied to the mbuf. This means that
 		 * the packets sent as input to this method aren't affected (aren't freed, changed, or anything like that). The algorithm will
 		 * continue allocating mbufs until: no more raw packets to send; OR cannot allocate mbufs because mbug pool is empty; OR number
-		 * of allocated mbufs is higher than a threshold of 80% of total TX descriptors. When one of these happen the algorithm will 
-		 * try to send the mbufs it already got through DPDK API. DPDK will free these mbufs after sending them. Then the algorithm will 
-		 * try to allocate mbufs again and send them again until no more raw packets are left to send to send or mbuf allocation failed 
-		 * 3 times in a raw. Raw packets that are bigger than the size of an mbuf or with length 0 will be skipped. Same goes for raw 
-		 * packets whose data could not be copied to the allocated mbuf for some reason. An appropriate error will be printed for 
+		 * of allocated mbufs is higher than a threshold of 80% of total TX descriptors. When one of these happen the algorithm will
+		 * try to send the mbufs it already got through DPDK API. DPDK will free these mbufs after sending them. Then the algorithm will
+		 * try to allocate mbufs again and send them again until no more raw packets are left to send to send or mbuf allocation failed
+		 * 3 times in a raw. Raw packets that are bigger than the size of an mbuf or with length 0 will be skipped. Same goes for raw
+		 * packets whose data could not be copied to the allocated mbuf for some reason. An appropriate error will be printed for
 		 * each such packet
 		 * @param[in] rawPacketsArr A pointer to an array of raw packets
 		 * @param[in] arrLength The length of the array
@@ -592,6 +593,19 @@ namespace pcpp
 		 * failed (for example: couldn't allocate an mbuf or DPDK returned an error)
 		 */
 		bool sendPacket(const Packet& packet, uint16_t txQueueId = 0);
+
+		/* Send Packets with timestamp capture */
+		int sendPackets(const RawPacket* rawPacketsArr, int arrLength, uint16_t txQueueId, struct timespec* tsp1, struct timespec* tsp2);
+
+		int sendPackets(const Packet** packetsArr, int arrLength, uint16_t txQueueId, struct timespec* tsp1, struct timespec* tsp2);
+
+		int sendPackets(const RawPacketVector& rawPacketsVec, uint16_t txQueueId, struct timespec* tsp1, struct timespec* tsp2);
+
+		bool sendPacket(const uint8_t* packetData, int packetDataLength, uint16_t txQueueId, struct timespec* tsp1, struct timespec* tsp2);
+
+		bool sendPacket(const RawPacket& rawPacket, uint16_t txQueueId, struct timespec* tsp1, struct timespec* tsp2);
+
+		bool sendPacket(const Packet& packet, uint16_t txQueueId, struct timespec* tsp1, struct timespec* tsp2);
 
 		/**
 		 * Overridden method from IPcapDevice. __BPF filters are currently not implemented for DpdkDevice__
@@ -670,7 +684,7 @@ namespace pcpp
 		//overridden methods
 
 		/**
-		 * Overridden method from IPcapDevice. It calls openMultiQueues() with 1 RX queue and 1 TX queue. 
+		 * Overridden method from IPcapDevice. It calls openMultiQueues() with 1 RX queue and 1 TX queue.
 		 * Notice opening the device only makes it ready to use, it doesn't start packet capturing. The device is opened in promiscuous mode
 		 * @return True if the device was opened successfully, false if device is already opened, if RX/TX queues configuration failed or of DPDK port
 		 * configuration and startup failed
@@ -717,7 +731,7 @@ namespace pcpp
 
 		typedef RawPacket* (*packetIterator)(void* packetStorage, int index);
 		int sendPacketsInner(uint16_t txQueueId, void* packetStorage, packetIterator iter, int arrLength);
-
+		int sendPacketsInner(uint16_t txQueueId, void* packetStorage, packetIterator iter, int arrLength, struct timespec* tsp1, struct timespec* tsp2);
 		char m_DeviceName[30];
 		DpdkPMDType m_PMDType;
 		std::string m_PMDName;

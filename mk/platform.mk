@@ -23,10 +23,10 @@ INSTALL_SCRIPT := install.sh
 UNINSTALL_SCRIPT := uninstall.sh
 
 
-PCAPPLUSPLUS_HOME := /home/pravein/myResearch/myp4dev/pcapplusplus
+PCAPPLUSPLUS_HOME := /home/pravein/pcapplusplus_dpdk
 
 
 USE_DPDK := 1
 
 
-RTE_SDK := /home/pravein/myResearch/myp4dev/dpdk-stable-17.11.1/
+RTE_SDK := /home/pravein/pcapplusplus/dpdk-stable-17.11.1/

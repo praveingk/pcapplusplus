@@ -427,6 +427,7 @@ int main(int argc, char* argv[])
 		EXIT_WITH_ERROR("Couldn't initialize DPDK");
 	}
 
+	printf("INitialized dpdk\n");
 	// removing DPDK master core from core mask because DPDK worker threads cannot run on master core
 	coreMaskToUse = coreMaskToUse & ~(DpdkDeviceList::getInstance().getDpdkMasterCore().Mask);
 
@@ -454,8 +455,11 @@ int main(int argc, char* argv[])
 	}
 
 	// go over all devices and open them
+
 	for (vector<DpdkDevice*>::iterator iter = dpdkDevicesToUse.begin(); iter != dpdkDevicesToUse.end(); iter++)
 	{
+		printf("Calling OpenMultiqueues, with total rx queues = %d\n", (*iter)->getTotalNumOfRxQueues());
+		//if (!(*iter)->openMultiQueues(1, 1))
 		if (!(*iter)->openMultiQueues((*iter)->getTotalNumOfRxQueues(), (*iter)->getTotalNumOfTxQueues()))
 		{
 			EXIT_WITH_ERROR("Couldn't open DPDK device #%d, PMD '%s'", (*iter)->getDeviceId(), (*iter)->getPMDName().c_str());
@@ -473,8 +477,10 @@ int main(int argc, char* argv[])
 	int i = 0;
 	for (vector<SystemCore>::iterator iter = coresToUse.begin(); iter != coresToUse.end(); iter++)
 	{
+
 		AppWorkerThread* newWorker = new AppWorkerThread(workerConfigArr[i], matchingEngine);
 		workerThreadVec.push_back(newWorker);
+		printf("Workers..\n");
 		i++;
 	}
 

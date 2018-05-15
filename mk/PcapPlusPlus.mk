@@ -1,5 +1,5 @@
-PCAPPLUSPLUS_HOME := /home/pravein/myResearch/myp4dev/pcapplusplus
-RTE_SDK := /home/pravein/myResearch/myp4dev/dpdk-stable-17.11.1/
+PCAPPLUSPLUS_HOME := /home/pravein/pcapplusplus_dpdk
+RTE_SDK := /home/pravein/pcapplusplus/dpdk-stable-17.11.1/
 
 USE_DPDK := 1
 

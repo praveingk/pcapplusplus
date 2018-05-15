@@ -201,7 +201,7 @@ void MBufRawPacket::appendData(const uint8_t* dataToAppend, size_t dataToAppendL
 
 	RawPacket::appendData(dataToAppend, dataToAppendLen);
 
-	LOG_DEBUG("Appended %d bytes to MBufRawPacket", (int)dataToAppendLen);
+	//LOG_DEBUG("Appended %d bytes to MBufRawPacket", (int)dataToAppendLen);
 }
 
 void MBufRawPacket::insertData(int atIndex, const uint8_t* dataToInsert, size_t dataToInsertLen)
@@ -221,7 +221,7 @@ void MBufRawPacket::insertData(int atIndex, const uint8_t* dataToInsert, size_t 
 
 	RawPacket::insertData(atIndex, dataToInsert, dataToInsertLen);
 
-	LOG_DEBUG("Inserted %d bytes to MBufRawPacket", (int)dataToInsertLen);
+	//LOG_DEBUG("Inserted %d bytes to MBufRawPacket", (int)dataToInsertLen);
 }
 
 bool MBufRawPacket::removeData(int atIndex, size_t numOfBytesToRemove)
@@ -241,7 +241,7 @@ bool MBufRawPacket::removeData(int atIndex, size_t numOfBytesToRemove)
 		return false;
 	}
 
-	LOG_DEBUG("Trimmed %d bytes from MBufRawPacket", (int)numOfBytesToRemove);
+	//LOG_DEBUG("Trimmed %d bytes from MBufRawPacket", (int)numOfBytesToRemove);
 
 	return true;
 }
@@ -351,7 +351,7 @@ bool DpdkDevice::setMtu(uint16_t newMtu)
 		return false;
 	}
 
-	LOG_DEBUG("Managed to set MTU from %d to %d", m_DeviceMtu, newMtu);
+	//LOG_DEBUG("Managed to set MTU from %d to %d", m_DeviceMtu, newMtu);
 	m_DeviceMtu = newMtu;
 	return true;
 }
@@ -374,6 +374,7 @@ bool DpdkDevice::openMultiQueues(uint16_t numOfRxQueuesToOpen, uint16_t numOfTxQ
 		openMultiQueues(getTotalNumOfRxQueues(), getTotalNumOfTxQueues(), config);
 		close();
 	}
+  printf("Device queues opened\n");
 
 	if (!configurePort(numOfRxQueuesToOpen, numOfTxQueuesToOpen))
 	{
@@ -388,6 +389,8 @@ bool DpdkDevice::openMultiQueues(uint16_t numOfRxQueuesToOpen, uint16_t numOfTxQ
 	if (!initQueues(numOfRxQueuesToOpen, numOfTxQueuesToOpen))
 		return false;
 
+
+  printf("Passed initQueues\n");
 	if (!startDevice())
 	{
 		LOG_ERROR("failed to start device %d\n", m_Id);
@@ -398,9 +401,12 @@ bool DpdkDevice::openMultiQueues(uint16_t numOfRxQueuesToOpen, uint16_t numOfTxQ
 	m_NumOfRxQueuesOpened = numOfRxQueuesToOpen;
 	m_NumOfTxQueuesOpened = numOfTxQueuesToOpen;
 
+  printf("Calling eth_stats_reset\n");
 	rte_eth_stats_reset(m_Id);
 
+  printf("Passed eth_stats_resset\n");
 	m_DeviceOpened = true;
+  printf("Passed openMultiQueues\n");
 	return m_DeviceOpened;
 }
 
@@ -409,7 +415,7 @@ void DpdkDevice::close()
 {
 	if (!m_DeviceOpened)
 	{
-		LOG_DEBUG("Trying to close device [%s] but device is already closed", m_DeviceName);
+		//LOG_DEBUG("Trying to close device [%s] but device is already closed", m_DeviceName);
 		return;
 	}
 	stopCapture();
@@ -417,7 +423,7 @@ void DpdkDevice::close()
 	m_NumOfRxQueuesOpened = 0;
 	m_NumOfTxQueuesOpened = 0;
 	rte_eth_dev_stop(m_Id);
-	LOG_DEBUG("Called rte_eth_dev_stop for device [%s]", m_DeviceName);
+	//LOG_DEBUG("Called rte_eth_dev_stop for device [%s]", m_DeviceName);
 	m_DeviceOpened = false;
 }
 
@@ -464,7 +470,7 @@ bool DpdkDevice::configurePort(uint8_t numOfRxQueues, uint8_t numOfTxQueues)
 		return false;
 	}
 
-	LOG_DEBUG("Successfully called rte_eth_dev_configure for device [%s] with %d RX queues and %d TX queues", m_DeviceName, numOfRxQueues, numOfTxQueues);
+	//LOG_DEBUG("Successfully called rte_eth_dev_configure for device [%s] with %d RX queues and %d TX queues", m_DeviceName, numOfRxQueues, numOfTxQueues);
 
 	return true;
 }
@@ -541,7 +547,7 @@ bool DpdkDevice::initMemPool(struct rte_mempool*& memPool, const char* mempoolNa
 	}
 	else
 	{
-		LOG_DEBUG("Successfully initialized packets pool of size [%d] for device [%s]", mBufPoolSize, m_DeviceName);
+		//LOG_DEBUG("Successfully initialized packets pool of size [%d] for device [%s]", mBufPoolSize, m_DeviceName);
 		ret = true;
 	}
     return ret;
@@ -643,8 +649,13 @@ void DpdkDevice::setDeviceInfo()
 	LOG_DEBUG("Device [%s] has %d RX queues", m_DeviceName, portInfo.max_rx_queues);
 	LOG_DEBUG("Device [%s] has %d TX queues", m_DeviceName, portInfo.max_tx_queues);
 
-	m_TotalAvailableRxQueues = portInfo.max_rx_queues;
-	m_TotalAvailableTxQueues = portInfo.max_tx_queues;
+	//m_TotalAvailableRxQueues = portInfo.max_rx_queues;
+	//m_TotalAvailableTxQueues = portInfo.max_tx_queues;
+
+  // HACK Pravein-> Setting Queues to 1
+  m_TotalAvailableRxQueues = 1;
+	m_TotalAvailableTxQueues = 1;
+
 }
 
 
@@ -731,7 +742,7 @@ bool DpdkDevice::startCaptureSingleThread(OnDpdkPacketsArriveCallback onPacketsA
 		return false;
 	}
 
-	LOG_DEBUG("Trying to start capturing on a single thread for device [%s]", m_DeviceName);
+	//LOG_DEBUG("Trying to start capturing on a single thread for device [%s]", m_DeviceName);
 
 	clearCoreConfiguration();
 
@@ -748,7 +759,7 @@ bool DpdkDevice::startCaptureSingleThread(OnDpdkPacketsArriveCallback onPacketsA
     	m_CoreConfiguration[coreId].IsCoreInUse = true;
     	m_CoreConfiguration[coreId].RxQueueId = 0;
 
-    	LOG_DEBUG("Trying to start capturing on core %d", coreId);
+    	//LOG_DEBUG("Trying to start capturing on core %d", coreId);
     	int err = rte_eal_remote_launch(dpdkCaptureThreadMain, (void*)this, coreId);
     	if (err != 0)
     	{
@@ -757,11 +768,11 @@ bool DpdkDevice::startCaptureSingleThread(OnDpdkPacketsArriveCallback onPacketsA
     		return false;
     	}
 
-    	LOG_DEBUG("Capturing started for device [%s]", m_DeviceName);
+    	//LOG_DEBUG("Capturing started for device [%s]", m_DeviceName);
     	return true;
 	}
 
-	LOG_ERROR("Could not find initialized core so capturing thread cannot be initialized");
+	//LOG_ERROR("Could not find initialized core so capturing thread cannot be initialized");
 	return false;
 }
 
@@ -809,17 +820,17 @@ bool DpdkDevice::startCaptureMultiThreads(OnDpdkPacketsArriveCallback onPacketsA
 
 void DpdkDevice::stopCapture()
 {
-	LOG_DEBUG("Trying to stop capturing on device [%s]", m_DeviceName);
+	//LOG_DEBUG("Trying to stop capturing on device [%s]", m_DeviceName);
 	m_StopThread = true;
 	for (int coreId = 0; coreId < MAX_NUM_OF_CORES; coreId++)
 	{
 		if (!m_CoreConfiguration[coreId].IsCoreInUse)
 			continue;
 		rte_eal_wait_lcore(coreId);
-		LOG_DEBUG("Thread on core [%d] stopped", coreId);
+		//LOG_DEBUG("Thread on core [%d] stopped", coreId);
 	}
 
-	LOG_DEBUG("All capturing threads stopped");
+	//LOG_DEBUG("All capturing threads stopped");
 }
 
 
@@ -834,7 +845,7 @@ int DpdkDevice::dpdkCaptureThreadMain(void *ptr)
 	}
 
 	uint32_t coreId = pThis->getCurrentCoreId();
-	LOG_DEBUG("Starting capture thread %d", coreId);
+	//LOG_DEBUG("Starting capture thread %d", coreId);
 
 	int queueId = pThis->m_CoreConfiguration[coreId].RxQueueId;
 
@@ -861,7 +872,7 @@ int DpdkDevice::dpdkCaptureThreadMain(void *ptr)
 		}
 	}
 
-	LOG_DEBUG("Exiting capture thread %d", coreId);
+	//LOG_DEBUG("Exiting capture thread %d", coreId);
 
 	return 0;
 }
@@ -889,14 +900,17 @@ bool DpdkDevice::setFilter(std::string filterAsString)
 	return false;
 }
 
-int sendPacketsInternal(rte_mbuf** mBufArr, int mBufArrLen, int devId, uint16_t txQueueId)
+int sendPacketsInternal(rte_mbuf** mBufArr, int mBufArrLen, int devId, uint16_t txQueueId, struct timespec* tsp1, struct timespec* tsp2)
 {
 	// try to send packets currently in mBufArr
-	LOG_DEBUG("Ready to send %d packets", mBufArrLen);
+	//LOG_DEBUG("Ready to send %d packets", mBufArrLen);
+	clock_gettime(CLOCK_REALTIME, tsp1);
 	int packetsSent = rte_eth_tx_burst(devId, txQueueId,
 			mBufArr,
 			mBufArrLen);
-	LOG_DEBUG("rte_eth_tx_burst sent %d out of %d", packetsSent, mBufArrLen);
+	clock_gettime(CLOCK_REALTIME, tsp2);
+
+	//LOG_DEBUG("rte_eth_tx_burst sent %d out of %d", packetsSent, mBufArrLen);
 
 	// free all mBufs we allocated
 	for (int i = 0; i < mBufArrLen; i++)
@@ -906,6 +920,27 @@ int sendPacketsInternal(rte_mbuf** mBufArr, int mBufArrLen, int devId, uint16_t 
 
 	return packetsSent;
 }
+
+
+int sendPacketsInternal(rte_mbuf** mBufArr, int mBufArrLen, int devId, uint16_t txQueueId)
+{
+	// try to send packets currently in mBufArr
+//	LOG_DEBUG("Ready to send %d packets", mBufArrLen);
+	int packetsSent = rte_eth_tx_burst(devId, txQueueId,
+			mBufArr,
+			mBufArrLen);
+
+	//LOG_DEBUG("rte_eth_tx_burst sent %d out of %d", packetsSent, mBufArrLen);
+
+	// free all mBufs we allocated
+	for (int i = 0; i < mBufArrLen; i++)
+	{
+		rte_pktmbuf_free(mBufArr[i]);
+	}
+
+	return packetsSent;
+}
+
 
 int DpdkDevice::sendPacketsInner(uint16_t txQueueId, void* packetStorage, packetIterator iter, int arrLength)
 {
@@ -956,7 +991,7 @@ int DpdkDevice::sendPacketsInner(uint16_t txQueueId, void* packetStorage, packet
 		{
 			// count the num of times mbuf allocation failed
 			numOfSendFailures++;
-			LOG_DEBUG("Couldn't allocate mBuf for transmitting, number of failures: %d", numOfSendFailures);
+			//LOG_DEBUG("Couldn't allocate mBuf for transmitting, number of failures: %d", numOfSendFailures);
 
 			// try to free mbufs by sending the packets currently waiting to be sent
 			if (packetsToSendInThisIteration > 0)
@@ -966,7 +1001,7 @@ int DpdkDevice::sendPacketsInner(uint16_t txQueueId, void* packetStorage, packet
 
 				if (packetsSentInThisIteration < packetsToSendInThisIteration)
 				{
-					LOG_DEBUG("Since NIC couldn't send all packet in this iteration, waiting for 0.2 second for H/W descriptors to get free");
+					//LOG_DEBUG("Since NIC couldn't send all packet in this iteration, waiting for 0.2 second for H/W descriptors to get free");
 					usleep(200000);
 				}
 			}
@@ -980,7 +1015,127 @@ int DpdkDevice::sendPacketsInner(uint16_t txQueueId, void* packetStorage, packet
 		// mbuf is allocated with length of 0, need to adjust it to the size of the raw packet
 		if (rte_pktmbuf_append(newMBuf, rawPacket->getRawDataLen()) == NULL)
 		{
-			LOG_ERROR("Couldn't set new allocated mBuf size to %d bytes", rawPacket->getRawDataLen());
+			//LOG_ERROR("Couldn't set new allocated mBuf size to %d bytes", rawPacket->getRawDataLen());
+			packetIndex++;
+			continue;
+		}
+
+		if (rawPacket->getRawDataLen() > (int)rte_pktmbuf_pkt_len(newMBuf))
+		{
+			//LOG_ERROR("Trying to send data with length larger than mBuf size. Requested length: %d; mBuf size: %d. Skipping RawPacket", rawPacket->getRawDataLen(), rte_pktmbuf_pkt_len(newMBuf));
+			packetIndex++;
+			continue;
+		}
+
+
+		uint8_t* mBufData = (uint8_t*)rte_pktmbuf_mtod(newMBuf, uint8_t*);
+		if (memcpy(mBufData, rawPacket->getRawData(), rawPacket->getRawDataLen()) == NULL)
+		{
+			//LOG_ERROR("Failed to copy RawPacket data to mBuf. Skipping RawPacket");
+			packetIndex++;
+			continue;
+		}
+
+		newMBuf->data_len = rawPacket->getRawDataLen();
+
+		mBufArr[packetsToSendInThisIteration] = newMBuf;
+		packetIndex++;
+		packetsToSendInThisIteration++;
+		numOfSendFailures = 0;
+
+		// if number of aggregated packets is beyond tx threshold or reached to the end of packet list, send the packets
+		// currently in mBufArr
+		if (packetsToSendInThisIteration >= (m_Config.transmitDescriptorsNumber*PACKET_TRANSMITION_THRESHOLD) || packetIndex == totalPacketsToSend)
+		{
+			int packetsSentInThisIteration = sendPacketsInternal(mBufArr, packetsToSendInThisIteration, m_Id, txQueueId);
+			packetsToSendInThisIteration = 0; // start a new iteration
+
+			if (packetsSentInThisIteration < packetsToSendInThisIteration)
+			{
+				//LOG_DEBUG("Since NIC couldn't send all packet in this iteration, waiting for 0.2 second for H/W descriptors to get free");
+				usleep(200000);
+			}
+		}
+	}
+
+	//LOG_DEBUG("All %d packets were sent successfully", packetIndex);
+	return packetIndex;
+}
+
+int DpdkDevice::sendPacketsInner(uint16_t txQueueId, void* packetStorage, packetIterator iter, int arrLength, struct timespec* tsp1, struct timespec* tsp2)
+{
+	if (!m_DeviceOpened)
+	{
+		//LOG_ERROR("Device '%s' not opened!", m_DeviceName);
+		return 0;
+	}
+
+	if (txQueueId < 0)
+	{
+		//LOG_ERROR("txQueueId must be >= 0");
+		return 0;
+	}
+
+	if (txQueueId >= m_NumOfTxQueuesOpened)
+	{
+		//LOG_ERROR("TX queue %d isn't opened in device" , txQueueId);
+		return 0;
+	}
+
+	int totalPacketsToSend = arrLength;
+	int packetIndex = 0;
+
+	#define PACKET_TRANSMITION_THRESHOLD 0.8
+	#define PACKET_TX_TRIES 1.5
+
+	int mBufArraySize = (int)(m_Config.transmitDescriptorsNumber*PACKET_TRANSMITION_THRESHOLD);
+	rte_mbuf* mBufArr[mBufArraySize];
+	int packetsToSendInThisIteration = 0;
+	int numOfSendFailures = 0;
+
+	while (packetIndex < totalPacketsToSend && numOfSendFailures < 3)
+	{
+		RawPacket* rawPacket = iter(packetStorage, packetIndex);
+
+		if (rawPacket->getRawDataLen() == 0)
+		{
+			//LOG_ERROR("Cannot send a packet with size of 0");
+			packetIndex++;
+			continue;
+		}
+
+		rte_mbuf* newMBuf = rte_pktmbuf_alloc(m_MBufMempool);
+
+		// couldn't allocate mbuf, probably out of mbuf resources
+		if (newMBuf == NULL)
+		{
+			// count the num of times mbuf allocation failed
+			numOfSendFailures++;
+			//LOG_DEBUG("Couldn't allocate mBuf for transmitting, number of failures: %d", numOfSendFailures);
+
+			// try to free mbufs by sending the packets currently waiting to be sent
+			if (packetsToSendInThisIteration > 0)
+			{
+				int packetsSentInThisIteration = sendPacketsInternal(mBufArr, packetsToSendInThisIteration, m_Id, txQueueId, tsp1, tsp2);
+				packetsToSendInThisIteration = 0; // start a new iteration
+
+				if (packetsSentInThisIteration < packetsToSendInThisIteration)
+				{
+					//LOG_DEBUG("Since NIC couldn't send all packet in this iteration, waiting for 0.2 second for H/W descriptors to get free");
+					usleep(200000);
+				}
+			}
+
+			// mbuf allocation failed, go to loop start
+			continue;
+		}
+
+		// else - rte_pktmbuf_alloc succeeded
+
+		// mbuf is allocated with length of 0, need to adjust it to the size of the raw packet
+		if (rte_pktmbuf_append(newMBuf, rawPacket->getRawDataLen()) == NULL)
+		{
+			//LOG_ERROR("Couldn't set new allocated mBuf size to %d bytes", rawPacket->getRawDataLen());
 			packetIndex++;
 			continue;
 		}
@@ -1012,18 +1167,18 @@ int DpdkDevice::sendPacketsInner(uint16_t txQueueId, void* packetStorage, packet
 		// currently in mBufArr
 		if (packetsToSendInThisIteration >= (m_Config.transmitDescriptorsNumber*PACKET_TRANSMITION_THRESHOLD) || packetIndex == totalPacketsToSend)
 		{
-			int packetsSentInThisIteration = sendPacketsInternal(mBufArr, packetsToSendInThisIteration, m_Id, txQueueId);
+			int packetsSentInThisIteration = sendPacketsInternal(mBufArr, packetsToSendInThisIteration, m_Id, txQueueId, tsp1, tsp2);
 			packetsToSendInThisIteration = 0; // start a new iteration
 
 			if (packetsSentInThisIteration < packetsToSendInThisIteration)
 			{
-				LOG_DEBUG("Since NIC couldn't send all packet in this iteration, waiting for 0.2 second for H/W descriptors to get free");
+				//LOG_DEBUG("Since NIC couldn't send all packet in this iteration, waiting for 0.2 second for H/W descriptors to get free");
 				usleep(200000);
 			}
 		}
 	}
 
-	LOG_DEBUG("All %d packets were sent successfully", packetIndex);
+	//LOG_DEBUG("All %d packets were sent successfully", packetIndex);
 	return packetIndex;
 }
 
@@ -1109,7 +1264,7 @@ bool DpdkDevice::receivePackets(MBufRawPacket** rawPacketsArr, int& rawPacketArr
 
 	struct rte_mbuf* mBufArray[RX_BURST_SIZE];
 	rawPacketArrLength = rte_eth_rx_burst(m_Id, rxQueueId, mBufArray, RX_BURST_SIZE);
-	LOG_DEBUG("Captured %d packets", rawPacketArrLength);
+	//LOG_DEBUG("Captured %d packets", rawPacketArrLength);
 
 	if (unlikely(rawPacketArrLength <= 0))
 	{
@@ -1126,7 +1281,7 @@ bool DpdkDevice::receivePackets(MBufRawPacket** rawPacketsArr, int& rawPacketArr
 
 	MBufRawPacket* mBufArr = NULL;
 	if (reuse) {
-		if (previousLength >= rawPacketArrLength) { 
+		if (previousLength >= rawPacketArrLength) {
 			// Size of provided array is enough to hold the burst
 			mBufArr = *rawPacketsArr;
 		} else {
@@ -1148,6 +1303,7 @@ bool DpdkDevice::receivePackets(MBufRawPacket** rawPacketsArr, int& rawPacketArr
 	*rawPacketsArr = mBufArr;
 	return true;
 }
+
 
 bool DpdkDevice::receivePackets(Packet** packetsArr, int& packetsArrLength, uint16_t rxQueueId)
 {
@@ -1171,7 +1327,7 @@ bool DpdkDevice::receivePackets(Packet** packetsArr, int& packetsArrLength, uint
 
 	struct rte_mbuf* mBufArray[RX_BURST_SIZE];
 	packetsArrLength = rte_eth_rx_burst(m_Id, rxQueueId, mBufArray, RX_BURST_SIZE);
-	LOG_DEBUG("Captured %d packets", packetsArrLength);
+	//LOG_DEBUG("Captured %d packets", packetsArrLength);
 
 	if (unlikely(packetsArrLength <= 0))
 	{
@@ -1187,6 +1343,53 @@ bool DpdkDevice::receivePackets(Packet** packetsArr, int& packetsArrLength, uint
 	for (int index = 0; index < packetsArrLength; ++index)
 	{
 		struct rte_mbuf* mBuf = mBufArray[index];
+		MBufRawPacket* newRawPacket = new MBufRawPacket();
+		newRawPacket->setMBuf(mBuf, time);
+		((*packetsArr)[index]).setRawPacket(newRawPacket, true);
+	}
+
+	return true;
+}
+
+
+bool DpdkDevice::receivePackets(Packet** packetsArr, int& packetsArrLength, uint16_t rxQueueId, struct timespec *tsp)
+{
+	if (!m_DeviceOpened)
+	{
+		LOG_ERROR("Device not opened");
+		return false;
+	}
+
+	if (!m_StopThread)
+	{
+		LOG_ERROR("DpdkDevice capture mode is currently running. Cannot recieve packets in parallel");
+		return false;
+	}
+
+	if (rxQueueId >= m_TotalAvailableRxQueues)
+	{
+		LOG_ERROR("RX queue ID #%d not available for this device", rxQueueId);
+		return false;
+	}
+	struct rte_mbuf* mBufArray[RX_BURST_SIZE];
+	packetsArrLength = rte_eth_rx_burst(m_Id, rxQueueId, mBufArray, RX_BURST_SIZE);
+  clock_gettime(CLOCK_REALTIME, tsp);
+
+	if (unlikely(packetsArrLength <= 0))
+	{
+		packetsArrLength = 0;
+		packetsArr = NULL;
+		return true;
+	}
+
+	timeval time;
+	gettimeofday(&time, NULL);
+
+  *packetsArr = new Packet[packetsArrLength];
+	for (int index = 0; index < packetsArrLength; ++index)
+	{
+		struct rte_mbuf* mBuf = mBufArray[index];
+		//printf("flags : %lX, %llX \n", mBuf->ol_flags, PKT_RX_TIMESTAMP);
 		MBufRawPacket* newRawPacket = new MBufRawPacket();
 		newRawPacket->setMBuf(mBuf, time);
 		((*packetsArr)[index]).setRawPacket(newRawPacket, true);
@@ -1253,6 +1456,48 @@ bool DpdkDevice::sendPacket(const Packet& packet, uint16_t txQueueId)
 	return (sendPackets(tempArr, 1, txQueueId) == 1);
 }
 
+/* Send packets with capture of Timestamp b/after */
+int DpdkDevice::sendPackets(const RawPacket* rawPacketsArr, int arrLength, uint16_t txQueueId, struct timespec* tsp1, struct timespec* tsp2)
+{
+	return sendPacketsInner(txQueueId, (void*)rawPacketsArr, getNextPacketFromRawPacketArray, arrLength, tsp1, tsp2);
+}
+
+int DpdkDevice::sendPackets(const Packet** packetsArr, int arrLength, uint16_t txQueueId, struct timespec* tsp1, struct timespec* tsp2)
+{
+	return sendPacketsInner(txQueueId, (void*)packetsArr, getNextPacketFromPacketArray, arrLength, tsp1, tsp2);
+}
+
+int DpdkDevice::sendPackets(const RawPacketVector& rawPacketsVec, uint16_t txQueueId, struct timespec* tsp1, struct timespec* tsp2)
+{
+	return sendPacketsInner(txQueueId, (void*)(&rawPacketsVec), getNextPacketFromRawPacketVec, rawPacketsVec.size(), tsp1, tsp2);
+}
+
+bool DpdkDevice::sendPacket(const uint8_t* packetData, int packetDataLength, uint16_t txQueueId, struct timespec* tsp1, struct timespec* tsp2)
+{
+	if (packetDataLength == 0)
+	{
+		LOG_ERROR("Trying to send a packet with length 0");
+		return false;
+	}
+
+	timeval timestamp;
+	RawPacket tempRawPacket(packetData, packetDataLength, timestamp, false);
+	return (sendPackets(&tempRawPacket, 1, txQueueId, tsp1, tsp2) == 1);
+}
+
+
+bool DpdkDevice::sendPacket(const RawPacket& rawPacket, uint16_t txQueueId, struct timespec* tsp1, struct timespec* tsp2)
+{
+	return (sendPackets(&rawPacket, 1, txQueueId, tsp1, tsp2) == 1);
+}
+
+bool DpdkDevice::sendPacket(const Packet& packet, uint16_t txQueueId, struct timespec* tsp1, struct timespec* tsp2)
+{
+	const Packet* tempArr[1] = { &packet };
+	return (sendPackets(tempArr, 1, txQueueId, tsp1, tsp2) == 1);
+}
+
+/* End of Send packet with b/after timestamp */
 int DpdkDevice::getAmountOfFreeMbufs()
 {
 	return (int)rte_mempool_avail_count(m_MBufMempool);

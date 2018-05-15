@@ -19,14 +19,14 @@ using namespace std;
 #define MBUFF_POOL_SIZE 1023  // (2^10 - 1) allow DPDK to hold these many packets in memory (at max).
                               // See "sending algorithm" in DpdkDevice.h
 #define CORE_MASK 341  // in binary it is 101010101. Meaning core # 8,6,4, 2 and 0 would be given to DPDK
-                       // core 0 would be used as the DPDK master core by default. To change this, need to 
+                       // core 0 would be used as the DPDK master core by default. To change this, need to
                        // change DpdkDeviceList::initDpdk() in DpdkDeviceList.cpp and rebuild PcapPlusPlus
 #define WORKER_THREAD_CORE 18  // vcpu # (as shown by lstopo). This is the last core on socket #0
 #define MTU_LENGTH 1500
 #define SEND_RATE_SKIP_PACKETS 318 // helps reduce send rate to 5 Gbps
 #define DEFAULT_TTL 12
 
-#define DPDK_PORT 1
+#define DPDK_PORT 0
 
 std::thread workerThread;
 bool stopSending;
@@ -36,10 +36,10 @@ void interruptHandler(int s){
     // stop capturing packets
     printf("\nCaught interrupt. Stopping the sending thread...\n");
 
-    
+
     stopSending = true;
 
-    workerThread.join();    
+    workerThread.join();
 
 /*    for(auto& t : workerThreads){
         t.join();
@@ -54,12 +54,9 @@ void send_func(DpdkDevice* dev, pcpp::Packet parsedPacket, bool* stopSending){
 
     pcpp::QmetadataLayer* qmetadatalayer = parsedPacket.getLayerOfType<pcpp::QmetadataLayer>();
 
-    //int i = 0;
+    //in i = 0;
     while(!*stopSending){
-      //  if(i == 0){
-            dev->sendPacket(parsedPacket,0);
-      //  }
-      //  i = (i+1) % SEND_RATE_SKIP_PACKETS;
+      dev->sendPacket(parsedPacket,0);
     }
 
     printf("\n[Sending Thread] Stopping packet sending ...\n");
@@ -68,7 +65,7 @@ void send_func(DpdkDevice* dev, pcpp::Packet parsedPacket, bool* stopSending){
 
 int main(int argv, char* argc[]){
 
-    
+
     // LoggerPP::getInstance().setAllModlesToLogLevel(LoggerPP::Debug);
 
     // construct the required packet
@@ -86,12 +83,12 @@ int main(int argv, char* argc[]){
     pcpp::UdpLayer newUDPLayer(srcPort, dstPort);
     pcpp::QmetadataLayer newQmetadataLayer(0);
 
-    int length_so_far = newEthLayer.getHeaderLen() + newIPv4Layer.getHeaderLen() + 
+    int length_so_far = newEthLayer.getHeaderLen() + newIPv4Layer.getHeaderLen() +
                         newUDPLayer.getHeaderLen() + newQmetadataLayer.getHeaderLen();
     int payload_length = MTU_LENGTH - length_so_far;
 
     printf("Header length before the payload is %d\n", length_so_far);
-    
+
     uint8_t payload[payload_length];
     int datalen = 4;
     char data[datalen] = {'D','A','T','A'};
@@ -153,8 +150,8 @@ int main(int argv, char* argc[]){
         printf("Exiting...\n");
         exit(1);
     }
-    
-/*    // 10 packets sending code 
+
+/*    // 10 packets sending code
     for(int i=0; i < 10; i++)
     {
         sendPacketsTo->sendPacket(newPacket, 0); // 0 is the TX queue
@@ -163,15 +160,15 @@ int main(int argv, char* argc[]){
     */
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
-    CPU_SET(WORKER_THREAD_CORE, &cpuset); 
+    CPU_SET(WORKER_THREAD_CORE, &cpuset);
 
-    stopSending = false; // this is thread UNSAFE. 
+    stopSending = false; // this is thread UNSAFE.
                          // But in our case only the main thread writes. The worker threads simply read.
-    
+
     workerThread = std::thread(send_func, sendPacketsTo, newPacket, &stopSending);
     int aff = pthread_setaffinity_np(workerThread.native_handle(), sizeof(cpu_set_t), &cpuset);
     printf("Sending thread now running on vcpu #%d\n", WORKER_THREAD_CORE);
-    
+
     // code to handle keyboard interrupt
     struct sigaction sigIntHandler;
     sigIntHandler.sa_handler = interruptHandler;
@@ -182,6 +179,6 @@ int main(int argv, char* argc[]){
     pause();
 
 
-  
+
     return 0;
 } // end of main()

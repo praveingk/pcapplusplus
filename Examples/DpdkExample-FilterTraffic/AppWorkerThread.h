@@ -60,6 +60,7 @@ public:
 			}
 		}
 
+		printf("Starting worker\n");
 		// if no DPDK devices were assigned to this worker/core don't enter the main loop and exit
 		if (m_WorkerConfig.InDataCfg.size() == 0)
 		{
@@ -70,6 +71,7 @@ public:
 		while (!m_Stop)
 		{
 			// go over all DPDK devices configured for this worker/core
+			//printf("1");
 			for (InputDataConfig::iterator iter = m_WorkerConfig.InDataCfg.begin(); iter != m_WorkerConfig.InDataCfg.end(); iter++)
 			{
 				// for each DPDK device go over all RX queues configured for this worker/core
@@ -80,6 +82,7 @@ public:
 					int packetArrLen = 0;
 
 					// receive packets from network on the specified DPDK device and RX queue
+					//printf("Waiting to receive Packets..\n");
 					if (!dev->receivePackets(&packetArr, packetArrLen, *iter2))
 					{
 						EXIT_WITH_ERROR("Couldn't receive packet from DpdkDevice #%d, RX queue #%d", dev->getDeviceId(), *iter2);

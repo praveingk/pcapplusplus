@@ -17,7 +17,7 @@ show_help() {
 
 
 # setup DPDK variables
-export RTE_SDK=/home/pravein/myResearch/myp4dev/dpdk-stable-17.11.1/
+export RTE_SDK=/home/pravein/pcapplusplus/dpdk-stable-17.11.1/
 
 # in DPDK 16.11 help scripts are stil in 'tools' dir but in 17.02 dir was renamed to 'usertools'
 TOOLS_DIR=""
