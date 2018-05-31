@@ -252,9 +252,9 @@ void do_receive_dpdk_timesync(DpdkDevice* dev) {
 		printf("%d ", packetArrLen);
 		for (int i=0;i< packetArrLen;i++) {
 
-			if (packetArr[i].isPacketOfType(pcpp::TIMESYNC) || packetArr[i].isPacketOfType(pcpp::TS)) {
+			if (true) {//packetArr[i].isPacketOfType(pcpp::TIMESYNC) || packetArr[i].isPacketOfType(pcpp::TS)) {
 				timesync_pkt = packetArr[i];
-
+				printf("Received\n");
 				struct timespec calctsp;
 				TimeSyncLayer* tsLayer = timesync_pkt.getLayerOfType<TimeSyncLayer>();
 				if (tsLayer->getCommand() == COMMAND_TIMESYNC_RESPONSE) {
@@ -323,9 +323,9 @@ void do_reset_time(PcapLiveDevice* pDevice) {
 	uint8_t igTs[6];
 	uint8_t egTs[6];
 	pcpp::Packet newPacket(100);
-	pcpp::EthLayer newEthernetLayer(pDevice->getMacAddress(), pcpp::MacAddress("ff:ff:ff:ff:ff:ff"), 0x1235);
+	pcpp::EthLayer newEthernetLayer(pDevice->getMacAddress(), pcpp::MacAddress("ff:ff:ff:ff:ff:ff"), 0x88f7);
 	clock_gettime(CLOCK_REALTIME, &tsp);   //Call clock_gettime to fill tsp
-	pcpp::TimeSyncLayer newTimeSyncLayer((uint8_t)COMMAND_TIMERESET, (uint8_t)0,(uint32_t)tsp.tv_nsec, (uint32_t)tsp.tv_sec, (uint32_t)0, (uint32_t)0, igTs, egTs);
+	pcpp::TimeSyncLayer newTimeSyncLayer((uint8_t)COMMAND_TIMERESET, (uint16_t)0,(uint32_t)tsp.tv_nsec, (uint32_t)tsp.tv_sec, (uint32_t)0, (uint32_t)0, igTs, egTs);
 	newPacket.addLayer(&newEthernetLayer);
 	newPacket.addLayer(&newTimeSyncLayer);
 	pDevice->sendPacket(&newPacket);
@@ -409,10 +409,10 @@ void do_timesync(PcapLiveDevice* pDevice) {
 	uint8_t igTs[6];
 	uint8_t egTs[6];
 
-	pcpp::EthLayer transDelayEthernetLayer(pDevice->getMacAddress(), pcpp::MacAddress("ff:ff:ff:ff:ff:ff"), 0x1235);
-	pcpp::TimeSyncLayer transDelayTimeSyncLayer((uint8_t)COMMAND_TIMESYNC_TRANSDELAY, (uint8_t)0,(uint32_t)0, (uint32_t)0, (uint32_t)0, (uint32_t)0, igTs, egTs);
-	pcpp::EthLayer newEthernetLayer(pDevice->getMacAddress(), pcpp::MacAddress("ff:ff:ff:ff:ff:ff"), 0x1235);
-	pcpp::TimeSyncLayer newTimeSyncLayer((uint8_t)COMMAND_TIMESYNC_REQ, (uint8_t)0,(uint32_t)0, (uint32_t)0, (uint32_t)0, (uint32_t)0, igTs, egTs);
+	pcpp::EthLayer transDelayEthernetLayer(pDevice->getMacAddress(), pcpp::MacAddress("ff:ff:ff:ff:ff:ff"), 0x88f7);
+	pcpp::TimeSyncLayer transDelayTimeSyncLayer((uint8_t)COMMAND_TIMESYNC_TRANSDELAY, (uint16_t)0,(uint32_t)0, (uint32_t)0, (uint32_t)0, (uint32_t)0, igTs, egTs);
+	pcpp::EthLayer newEthernetLayer(pDevice->getMacAddress(), pcpp::MacAddress("ff:ff:ff:ff:ff:ff"), 0x88f7);
+	pcpp::TimeSyncLayer newTimeSyncLayer((uint8_t)COMMAND_TIMESYNC_REQ, (uint16_t)0,(uint32_t)0, (uint32_t)0, (uint32_t)0, (uint32_t)0, igTs, egTs);
 
 	delayPacket.addLayer(&transDelayEthernetLayer);
 	delayPacket.addLayer(&transDelayTimeSyncLayer);
@@ -502,10 +502,10 @@ void start_timesync_dpdk() {
 	uint8_t egTs[6];
 
 	pcpp::MacAddress sourceMac = sendPacketsTo->getMacAddress();//pcpp::MacAddress("3c:fd:fe:b7:e8:e8"); //
-	pcpp::EthLayer transDelayEthernetLayer(sourceMac, pcpp::MacAddress("ff:ff:ff:ff:ff:ff"), 0x1235);
-	pcpp::TimeSyncLayer transDelayTimeSyncLayer((uint8_t)COMMAND_TIMESYNC_TRANSDELAY, (uint8_t)0,(uint32_t)0, (uint32_t)0, (uint32_t)0, (uint32_t)0, igTs, egTs);
-	pcpp::EthLayer newEthernetLayer(sourceMac, pcpp::MacAddress("ff:ff:ff:ff:ff:ff"), 0x1235);
-	pcpp::TimeSyncLayer newTimeSyncLayer((uint8_t)COMMAND_TIMESYNC_REQ, (uint8_t)0,(uint32_t)0, (uint32_t)0, (uint32_t)0, (uint32_t)0, igTs, egTs);
+	pcpp::EthLayer transDelayEthernetLayer(sourceMac, pcpp::MacAddress("3c:fd:fe:ad:82:e1"), 0x88f7);
+	pcpp::TimeSyncLayer transDelayTimeSyncLayer((uint8_t)COMMAND_TIMESYNC_TRANSDELAY, (uint16_t)0,(uint32_t)0, (uint32_t)0, (uint32_t)0, (uint32_t)0, igTs, egTs);
+	pcpp::EthLayer newEthernetLayer(sourceMac, pcpp::MacAddress("3c:fd:fe:ad:82:e1"), 0x88f7);
+	pcpp::TimeSyncLayer newTimeSyncLayer((uint8_t)COMMAND_TIMESYNC_REQ, (uint16_t)0,(uint32_t)0, (uint32_t)0, (uint32_t)0, (uint32_t)0, igTs, egTs);
 
 	delayPacket.addLayer(&transDelayEthernetLayer);
 	delayPacket.addLayer(&transDelayTimeSyncLayer);
@@ -747,7 +747,7 @@ int main(int argc, char* argv[])
 		//timerThread = std::thread(start_timer);
 		start_timesync_dpdk();
 		//start_crosstraffic_dpdk();
-		start_samenic_dpdk();
+		//start_samenic_dpdk();
 
     // code to handle keyboard interrupt
     struct sigaction sigIntHandler;
