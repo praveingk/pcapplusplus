@@ -34,7 +34,7 @@ TimeSyncCPULayer::TimeSyncCPULayer(const uint8_t command, const uint8_t* globalT
 
 	memcpy(tsHdr->globalTs, globalTs, 6);
 
-	m_Protocol = TIMESYNCCPU;
+	m_Protocol = TS;
 }
 
 
@@ -43,7 +43,7 @@ TimeSyncCPULayer::TimeSyncCPULayer() : Layer()
 	m_DataLen = sizeof(cpuctrl_t);
 	m_Data = new uint8_t[m_DataLen];
 	memset(m_Data, 0, m_DataLen);
-	m_Protocol = TIMESYNCCPU;
+	m_Protocol = TS;
 }
 
 void TimeSyncCPULayer::computeCalculateFields()
