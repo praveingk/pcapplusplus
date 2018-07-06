@@ -202,7 +202,7 @@ namespace pcpp
 		 * TimeSync Protocol
 		 */
 		TIMESYNC = 0x40000000,
-		TIMESYNCCPU = 0x80000000,
+		SIN = 0x80000000,
 		PacketTrailer = 0x100000000,
 		QMETADATA = 0x4000000000
 	};

@@ -106,9 +106,6 @@ void EthLayer::computeCalculateFields()
 		case TIMESYNC:
 			getEthHeader()->etherType = htons(PCPP_ETHERTYPE_TIMESYNC);
 			break;
-		case TIMESYNCCPU:
-			getEthHeader()->etherType = htons(PCPP_ETHERTYPE_TIMESYNCCPU);
-			break;
 		default:
 			return;
 	}
